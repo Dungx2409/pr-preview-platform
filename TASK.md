@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.3 Isolation objects)**
+**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.4 Manual deploy to `pr-0`)**
 
 ---
 
@@ -83,7 +83,7 @@
   - Deployment, Service, Ingress (class + hostname from values), ephemeral Postgres, ServiceAccount, probes, securityContext, resources.
   - *Acceptance:* `helm lint` + `helm template | kubeconform` clean; sensible `values.yaml`; Ingress hostname is set at creation (not patched later).
 
-- [ ] **T-3.3** 🤖 **Isolation objects** (depends T-3.2) — ResourceQuota, LimitRange, default-deny NetworkPolicy + allows, PSS labels.
+- [x] **T-3.3** 🤖 **Isolation objects** (depends T-3.2) — ResourceQuota, LimitRange, default-deny NetworkPolicy + allows, PSS labels.
   - *Acceptance:* rendered manifests reviewed; a quota-exceeding test is rejected.
 
 - [ ] **T-3.4** 🤝 **Manual deploy to `pr-0`** (depends T-3.3, T-2.1)

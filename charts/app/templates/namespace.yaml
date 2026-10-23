@@ -1,0 +1,15 @@
+{{- if .Values.namespace.create -}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace.name | default .Release.Namespace }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: namespace
+    pod-security.kubernetes.io/enforce: {{ .Values.namespace.podSecurity.enforce | default "baseline" | quote }}
+    pod-security.kubernetes.io/enforce-version: {{ .Values.namespace.podSecurity.enforceVersion | default "latest" | quote }}
+    pod-security.kubernetes.io/warn: {{ .Values.namespace.podSecurity.warn | default "restricted" | quote }}
+    pod-security.kubernetes.io/warn-version: {{ .Values.namespace.podSecurity.warnVersion | default "latest" | quote }}
+    pod-security.kubernetes.io/audit: {{ .Values.namespace.podSecurity.audit | default "restricted" | quote }}
+    pod-security.kubernetes.io/audit-version: {{ .Values.namespace.podSecurity.auditVersion | default "latest" | quote }}
+{{- end }}
