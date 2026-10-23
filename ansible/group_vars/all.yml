@@ -1,6 +1,7 @@
 ---
 k3s_node_ip: "{{ ansible_host }}"   # taken from inventory = 192.168.56.10
 k3s_flannel_iface: enp0s8           # host-only NIC — do NOT use enp0s3 (NAT)
+k3s_version: "v1.36.5+k3s1"         # pinned k3s release (docs/versions.md)
 swap_size: 2G
 
 # Kubeconfig is stored OUTSIDE the repo (SPEC §6.2 / AGENTS.md §4).
