@@ -1,0 +1,7 @@
+---
+apiVersion: v2
+name: app
+description: Helm chart for PR Preview Platform workloads (Tier 1 shared and Tier 2 previews)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

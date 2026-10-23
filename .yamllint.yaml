@@ -3,6 +3,11 @@ yaml-files:
   - '*.yaml'
   - '*.yml'
 
+ignore: |
+  charts/**/templates/
+  .venv/
+  venv/
+
 rules:
   document-start:
     level: warning

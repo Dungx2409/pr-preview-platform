@@ -47,12 +47,22 @@ jobs:
           curl -sSL "$URL" | tar -xz -C /usr/local/bin gitleaks
           chmod +x /usr/local/bin/gitleaks
 
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION="0.6.7"
+          URL="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          curl -sSL "$URL" | tar -xz -C /usr/local/bin kubeconform
+          chmod +x /usr/local/bin/kubeconform
+
       - name: Install test dependencies
         run: |
           pip install -r demo-app/requirements.txt -r demo-app/requirements-dev.txt
 
       - name: Run make lint
         run: make lint
+
+      - name: Run make helm-template
+        run: make helm-template
 
       - name: Run make test
         run: make test

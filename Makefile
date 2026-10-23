@@ -14,7 +14,7 @@ help: ## Display available make targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(CYAN)%-18s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: lint
-lint: lint-yaml lint-ansible lint-shell lint-secrets ## Run all linters (yamllint, ansible-lint, shellcheck, gitleaks)
+lint: lint-yaml lint-ansible lint-shell lint-secrets lint-helm ## Run all linters (yamllint, ansible-lint, shellcheck, gitleaks, helm lint)
 	@echo -e "$(GREEN)✓ All linters passed!$(RESET)"
 
 .PHONY: lint-yaml
@@ -45,6 +45,13 @@ lint-secrets: ## Scan repository for secrets using gitleaks
 	@echo -e "$(CYAN)→ Running gitleaks detect...$(RESET)"
 	gitleaks detect --no-git --source . --verbose
 
+.PHONY: lint-helm
+lint-helm: ## Lint Helm charts
+	@echo -e "$(CYAN)→ Running helm lint...$(RESET)"
+	@if [ -f "charts/app/Chart.yaml" ]; then \
+		helm lint charts/app; \
+	fi
+
 .PHONY: test
 test: ## Run unit tests (demo-app and exporter)
 	@echo -e "$(CYAN)→ Running tests...$(RESET)"
@@ -70,9 +77,18 @@ ansible-check: ## Run ansible-playbook in check/diff mode
 
 .PHONY: helm-template
 helm-template: ## Render Helm chart with sample values and validate
-	@echo -e "$(CYAN)→ Rendering Helm chart...$(RESET)"
+	@echo -e "$(CYAN)→ Rendering and validating Helm chart...$(RESET)"
 	@if [ -f "charts/app/Chart.yaml" ]; then \
 		helm lint charts/app; \
+		if command -v kubeconform >/dev/null 2>&1; then \
+			helm template test-app charts/app | kubeconform -summary -strict; \
+		elif [ -f "$${HOME}/.kube/pr-preview.yaml" ]; then \
+			helm template test-app charts/app | KUBECONFIG="$${HOME}/.kube/pr-preview.yaml" kubectl apply --dry-run=client -f -; \
+		elif command -v docker >/dev/null 2>&1; then \
+			helm template test-app charts/app | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 -summary -strict; \
+		else \
+			helm template test-app charts/app >/dev/null; \
+		fi \
 	else \
 		echo "charts/app/Chart.yaml not found yet. Skipping until T-3.2."; \
 	fi
