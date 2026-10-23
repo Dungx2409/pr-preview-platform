@@ -77,6 +77,14 @@ _(empty — add as discovered. Pre-known traps are listed in AGENTS.md §13.)_
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-23 — T-1.5 — Ansible role common
+**Did:** Enhanced Ansible role `common` to include `fail2ban`, `unattended-upgrades`, handlers for `ssh` and `fail2ban` service restarts, and SSH hardening via drop-in configuration `/etc/ssh/sshd_config.d/99-hardening.conf` (disabling password authentication and root login). Explicitly tagged roles in `ansible/site.yml`. Verified dry-run `--check --diff`, executed real run on VM `devops-server`, and verified idempotency with a second run.
+**Why this approach:** SSH hardening and automated security upgrades reduce the attack surface of the node, while drop-in configuration prevents overriding upstream default configurations.
+**Verified:** `ansible-playbook --check --diff` passed clean; real run succeeded (`ok=10 changed=3`); second run reported **0 changed** (`ok=9 changed=0 failed=0`); verified SSH key login still works and `fail2ban` active jail `sshd`; `make lint` passed 0 errors.
+**Gotchas / decisions:** In Ansible `--check` mode, services depending on packages installed in the same play will report missing service if not handled with `ignore_errors: "{{ ansible_check_mode }}"`.
+**Learned (interview note):** Ansible idempotency means that executing the same playbook multiple times against the target host produces the exact same end state without making unnecessary changes on subsequent runs (`changed=0`).
+**Next:** T-1.6 — Provision and verify single-node k3s cluster on the local VM.
+
 ### 2026-10-23 — T-1.0 — Local VM documented and snapshotted
 **Did:** Measured and recorded physical VM specs into `docs/runbook.md` (RAM 8 GB, 2 vCPU, 25.6 GB VDI disk, Adapter 1 NAT with port forwarding 2222→22, Adapter 2 Host-Only `vboxnet0` with static IP `192.168.56.10`). Wrote full "recreate the VM from scratch" SOP (VirtualBox CLI commands, Ubuntu 24.04 install, Netplan static host-only IP, SSH key-only configuration). Documented headless management commands and verified snapshot tree (`clean-os-ssh-ready`, `base vm`, `k3s-ok`).
 **Why this approach:** Having a precise and reproducible runbook ensures the development environment can be rebuilt reliably by any engineer in under 30 minutes, meeting the Disaster Recovery target.

@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ T-1.5 (🤖 Ansible role common)**
+**→ T-1.6 (🤖 Ansible role k3s)**
 
 ---
 
@@ -40,7 +40,7 @@
   - Record real VM spec, adapters (NAT + host-only) and addressing in `docs/runbook.md` (no secrets); SSH key-only login from the host works; take a **base snapshot** before Ansible changes; write "recreate the VM from scratch" steps.
   - *Acceptance:* a second person could recreate the VM from the runbook; snapshot name recorded in DEVLOG.
 
-- [~] **T-1.5** 🤖 **Ansible role `common`** (depends T-1.0)
+- [x] **T-1.5** 🤖 **Ansible role `common`** (depends T-1.0)
   - apt upgrade, unattended-upgrades, SSH hardening (key-only, no root login), fail2ban, timezone, swap decision (logged). Static inventory for the local VM (`inventory/local.ini` git-ignored + `.example`).
   - *Acceptance:* `--check` clean; real run OK (🟡); **second run = 0 changed**; `ansible-lint` clean.
 

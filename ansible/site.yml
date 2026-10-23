@@ -3,5 +3,7 @@
   hosts: k3s_server
   become: true
   roles:
-    - common
-    - k3s
+    - role: common
+      tags: [common]
+    - role: k3s
+      tags: [k3s]
