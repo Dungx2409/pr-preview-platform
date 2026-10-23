@@ -1,0 +1,27 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: previews
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: pr-preview-platform
+    app.kubernetes.io/component: appproject
+spec:
+  description: "Argo CD Project for Tier 1 (shared) and Tier 2 (pr-*) preview environments"
+
+  # Explicit allowed source repositories (SPEC §6.4)
+  sourceRepos:
+    - "https://github.com/Dungx2409/pr-preview-platform.git"
+
+  # Explicit destination whitelist: shared and pr-* only
+  destinations:
+    - server: "https://kubernetes.default.svc"
+      namespace: "shared"
+    - server: "https://kubernetes.default.svc"
+      namespace: "pr-*"
+
+  # Cluster-resource whitelist: Namespace only (SPEC §6.4)
+  clusterResourceWhitelist:
+    - group: ""
+      kind: "Namespace"

@@ -65,6 +65,9 @@ The following verification matrix records the empirical test results executed vi
 | **SEC-05** | **Control Plane Hijack via Tailnet** | Operator API Server Proxy disabled (`APISERVER_PROXY: "false"`) | Inspect operator deployment environment variables in `tailscale` ns | `APISERVER_PROXY=false`, port 6443 not advertised to tailnet | **PASS** |
 | **SEC-06** | **Credential Leak in VCS** | Automated Gitleaks scanning in pre-commit and CI | `make lint` running `gitleaks detect` | `0 leaks found` across all commits and files | **PASS** |
 | **SEC-07** | **Malicious Fork Execution** | Label gate `preview` + fork workflow guard | `preview.yml` condition check (`github.repository` matching) | Untrusted pull requests cannot trigger image builds or deployments | **PASS** |
+| **SEC-08** | **Cross-Tenant Namespace Escaping** | AppProject `previews` destination whitelist (`shared`, `pr-*`) | Deploy Application targeting forbidden namespace `default` | Rejected with `InvalidSpecError` (`destination not permitted in project 'previews'`) | **PASS** |
+| **SEC-09** | **Untrusted Source Repo Injection** | AppProject `previews` sourceRepos whitelist | Deploy Application targeting external Git repository | Rejected with `InvalidSpecError` (`repo not permitted in project 'previews'`) | **PASS** |
+| **SEC-10** | **Cluster Privilege Escalation** | AppProject `clusterResourceWhitelist` (Namespace only) | Verify AppProject spec against cluster-scoped resources | Prevents preview apps from minting ClusterRoles or mutating node resources | **PASS** |
 
 ---
 

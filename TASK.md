@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 2 — Cluster platform (T-2.4 AppProject previews)**
+**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.1 Demo app)**
 
 ---
 
@@ -70,7 +70,7 @@
   - Pinned install; UI **not exposed** (port-forward from the host or owner-only tailnet); initial admin secret rotated; GitHub read-only token Secret created out-of-band.
   - *Acceptance:* login works via port-forward; Argo CD UI not reachable by other tailnet members or the LAN.
 
-- [ ] **T-2.4** 🤖 **AppProject `previews`** (depends T-2.3)
+- [x] **T-2.4** 🤖 **AppProject `previews`** (depends T-2.3)
   - Allowed source repo(s) explicit; destinations = `shared` and `pr-*` only; cluster-resource whitelist = `Namespace`.
   - *Acceptance:* an Application targeting any other namespace is rejected (documented test).
 

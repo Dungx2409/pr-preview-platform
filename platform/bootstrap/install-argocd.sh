@@ -87,6 +87,13 @@ else
   fi
 fi
 
+# 7. Apply AppProjects (previews)
+PROJECTS_FILE="${REPO_ROOT}/platform/argocd/project-previews.yaml"
+if [[ -f "${PROJECTS_FILE}" ]]; then
+  echo "==> Applying Argo CD AppProject 'previews'..."
+  kubectl apply -f "${PROJECTS_FILE}"
+fi
+
 echo "==> [Argo CD Bootstrap] Installation completed successfully!"
 echo "    Access UI locally via:"
 echo "      kubectl port-forward svc/argocd-server -n ${NAMESPACE} 8080:443"
