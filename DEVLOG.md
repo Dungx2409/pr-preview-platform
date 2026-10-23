@@ -31,7 +31,7 @@
 | PR closed → everything gone | ≤ 3 min | — | — | — |
 | Rebuild from empty project | ≤ 30 min | — | — | — |
 | Leaks after 20 open/close cycles | 0 | — | — | — |
-| Node RAM headroom with full stack | ≥ 20 % free | — | — | — |
+| Node RAM headroom with full stack | ≥ 20 % free | 84.2 % (6 255 / 7 424 MB) | 2026-10-23 | `free -m` on VM post-k3s install (T-1.6) |
 | Monthly credit burn (VM running N h/mo) | within budget | — | — | — |
 | Tạo Ingress Tailscale → URL truy cập được lần đầu | ≤ 60 s | — | — | — |
 | RAM operator + proxy pod mỗi preview | ≤ TBD | — | — | — |
@@ -76,6 +76,14 @@ _(empty — add as discovered. Pre-known traps are listed in AGENTS.md §13.)_
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-23 — T-1.6 — Ansible role k3s
+**Did:** Pinned k3s release to `v1.36.5+k3s1` in `group_vars/all.yml` matching `docs/versions.md`. Documented explicit rationale for all server flags (`--node-ip`, `--advertise-address`, `--flannel-iface enp0s8`, `--tls-san`, `--write-kubeconfig-mode 644`). Handled idempotent host kubeconfig management using `stat` guard to store credentials at `~/.kube/pr-preview.yaml` outside the repository. Executed dry-run `--check --diff`, executed real run on VM `devops-server`, verified 100% idempotency with second run (`ok=5 changed=0`), verified `kubectl get nodes` Ready over host-only interface, and verified port 6443 isolation.
+**Why this approach:** Binding k3s internal IP, advertise address, and Flannel overlay to the host-only adapter `enp0s8` guarantees that Kubernetes cluster traffic and API server access remain strictly private to the host machine without exposing ports to the home router or public internet.
+**Verified:** `kubectl get nodes -o wide` reported `devops-server` Ready (v1.36.5+k3s1, internal IP 192.168.56.10); `curl https://127.0.0.1:6443` returned Connection Refused (no port forwarding on NAT); `curl https://192.168.56.10:6443/version` returned 401 Unauthorized (API active behind host-only subnet); second run achieved **0 changed**; RAM headroom measured at **84.2 % free** (6 255 / 7 424 MB available, 1 169 MB used).
+**Gotchas / decisions:** When using `ansible.builtin.fetch` followed by `replace` on the host, subsequent runs would detect hash mismatch and report false `changed` status. Resolved by using `stat` check to skip fetch/replace when the target kubeconfig already exists on the host.
+**Learned (interview note):** Single-node k3s with Flannel explicitly tied to a private host-only NIC separates control plane and overlay networking from internet-facing NAT adapters, adhering to the principle of least privilege and zero trust at the network layer.
+**Next:** Phase 1 complete. Proceed to Phase 2: T-2.0 (Tailscale private-Ingress spike go/no-go).
 
 ### 2026-10-23 — T-1.5 — Ansible role common
 **Did:** Enhanced Ansible role `common` to include `fail2ban`, `unattended-upgrades`, handlers for `ssh` and `fail2ban` service restarts, and SSH hardening via drop-in configuration `/etc/ssh/sshd_config.d/99-hardening.conf` (disabling password authentication and root login). Explicitly tagged roles in `ansible/site.yml`. Verified dry-run `--check --diff`, executed real run on VM `devops-server`, and verified idempotency with a second run.

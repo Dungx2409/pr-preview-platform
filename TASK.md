@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ T-1.6 (🤖 Ansible role k3s)**
+**→ Phase 2 — Cluster platform (T-2.0 Tailscale private-Ingress spike)**
 
 ---
 
@@ -44,7 +44,7 @@
   - apt upgrade, unattended-upgrades, SSH hardening (key-only, no root login), fail2ban, timezone, swap decision (logged). Static inventory for the local VM (`inventory/local.ini` git-ignored + `.example`).
   - *Acceptance:* `--check` clean; real run OK (🟡); **second run = 0 changed**; `ansible-lint` clean.
 
-- [~] **T-1.6** 🤖 **Ansible role `k3s`** (depends T-1.5)
+- [x] **T-1.6** 🤖 **Ansible role `k3s`** (depends T-1.5)
   - Pinned k3s, documented flags and why, kubeconfig stored **outside the repo**, wait for node Ready.
   - *Acceptance:* `kubectl get nodes` Ready from the host via the host-only interface; **6443 not reachable from the LAN/internet** (verify from a second device or by firewall rules); idempotent rerun; VM RAM headroom recorded in DEVLOG Metrics.
 

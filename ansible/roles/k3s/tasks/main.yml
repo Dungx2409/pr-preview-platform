@@ -1,15 +1,17 @@
 ---
-- name: Tải script cài k3s
+- name: Download k3s installation script
   ansible.builtin.get_url:
     url: https://get.k3s.io
     dest: /tmp/k3s-install.sh
     mode: "0755"
 
-- name: Cài k3s server
+- name: Install k3s server with security & network flags
   ansible.builtin.command:
     cmd: /tmp/k3s-install.sh
-    creates: /usr/local/bin/k3s        # đã có thì bỏ qua = idempotent
+    creates: /usr/local/bin/k3s
   environment:
+    # Pinned k3s version from docs/versions.md (guarantees determinism)
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
     INSTALL_K3S_EXEC: >-
       server
       --node-ip {{ k3s_node_ip }}
@@ -17,20 +19,35 @@
       --flannel-iface {{ k3s_flannel_iface }}
       --tls-san {{ k3s_node_ip }}
       --write-kubeconfig-mode 644
+  # Flags explanation:
+  # --node-ip: Binds node internal IP to host-only interface (192.168.56.10), avoiding NAT (10.0.2.15).
+  # --advertise-address: API server advertises host-only IP for cluster traffic.
+  # --flannel-iface enp0s8: Forces Flannel overlay network over host-only interface instead of NAT.
+  # --tls-san: Injects host-only IP into API server TLS certificate SAN to avoid cert validation errors.
+  # --write-kubeconfig-mode 644: Grants read access to kubeconfig on the server node.
 
-- name: Chờ node Ready
+- name: Wait for k3s node to be in Ready state
   ansible.builtin.command: k3s kubectl get nodes
   register: k3s_nodes
   until: "' Ready' in k3s_nodes.stdout"
   retries: 20
   delay: 6
   changed_when: false
+  check_mode: false
+
+- name: Check if kubeconfig already exists on host
+  ansible.builtin.stat:
+    path: "{{ kubeconfig_local_path }}"
+  delegate_to: localhost
+  become: false
+  register: k3s_local_kubeconfig
 
 - name: Fetch kubeconfig to host (stored OUTSIDE the repo — see SPEC §6.2)
   ansible.builtin.fetch:
     src: /etc/rancher/k3s/k3s.yaml
     dest: "{{ kubeconfig_local_path }}"
     flat: true
+  when: not k3s_local_kubeconfig.stat.exists
 
 - name: Fix server address in kubeconfig (127.0.0.1 → host-only VM IP)
   ansible.builtin.replace:
@@ -39,3 +56,4 @@
     replace: "https://{{ k3s_node_ip }}:6443"
   delegate_to: localhost
   become: false
+  when: not k3s_local_kubeconfig.stat.exists
