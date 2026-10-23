@@ -200,4 +200,17 @@ KUBECONFIG=~/.kube/pr-preview.yaml kubectl port-forward svc/argocd-server -n arg
 ```
 Open `https://localhost:8080` in your host browser. Login as `admin`.
 
+### AppProject previews (Tenant Isolation)
+The `previews` AppProject (`platform/argocd/project-previews.yaml`) enforces least-privilege boundaries:
+- Source repository restricted strictly to `https://github.com/Dungx2409/pr-preview-platform.git`.
+- Destination namespaces restricted strictly to `shared` and `pr-*`.
+- Cluster-scoped resources restricted exclusively to `Namespace`.
+
+Apply or verify AppProject:
+```bash
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl apply -f platform/argocd/project-previews.yaml
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl get appproject previews -n argocd
+```
+
+
 
