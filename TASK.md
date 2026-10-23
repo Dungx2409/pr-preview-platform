@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 2 — Cluster platform (T-2.3 Argo CD install + access)**
+**→ Phase 2 — Cluster platform (T-2.4 AppProject previews)**
 
 ---
 
@@ -66,7 +66,7 @@
   - Script/runbook that proves: member in `group:reviewers` → access; member outside the group → denied; non-member → denied; nothing exposed publicly.
   - *Acceptance:* results table in `docs/security.md`.
 
-- [ ] **T-2.3** 🤝 **Argo CD install + access** (depends T-1.6)
+- [x] **T-2.3** 🤝 **Argo CD install + access** (depends T-1.6)
   - Pinned install; UI **not exposed** (port-forward from the host or owner-only tailnet); initial admin secret rotated; GitHub read-only token Secret created out-of-band.
   - *Acceptance:* login works via port-forward; Argo CD UI not reachable by other tailnet members or the LAN.
 

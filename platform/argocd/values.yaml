@@ -1,0 +1,77 @@
+---
+# Helm values for Argo CD
+# Chart: argo/argo-cd:10.10.5
+# AppVersion: v3.5.6 (Pinned per docs/versions.md and SPEC §4.2)
+
+global:
+  image:
+    tag: "v3.5.6"
+
+configs:
+  params:
+    server.insecure: false
+  cm:
+    admin.enabled: true
+
+# Application controller
+controller:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Argo CD API/UI Server
+server:
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Repository Server (manifest rendering)
+repoServer:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+# ApplicationSet Controller (Required for Tier 2 Pull Request generator)
+applicationSet:
+  enabled: true
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Disable Dex (SSO not needed for local single-user lab; saves ~100 MiB RAM)
+dex:
+  enabled: false
+
+# Disable Notifications controller (saves RAM until needed in Phase 4)
+notifications:
+  enabled: false
+
+# Redis cache
+redis:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
