@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.1 Demo app)**
+**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.2 Helm chart `charts/app`)**
 
 ---
 
@@ -76,7 +76,7 @@
 
 ## Phase 3 — Demo app, chart, Tier 1 shared environment
 
-- [ ] **T-3.1** 🤖 **Demo app** — FastAPI per SPEC §6.6, pytest, multi-stage non-root Dockerfile.
+- [x] **T-3.1** 🤖 **Demo app** — FastAPI per SPEC §6.6, pytest, multi-stage non-root Dockerfile.
   - *Acceptance:* `make test` green; local `docker build` + run returns the expected JSON; runs as non-root.
 
 - [ ] **T-3.2** 🤖 **Helm chart `charts/app`** (depends T-3.1)
