@@ -1,0 +1,26 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shared-main
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: previews
+  source:
+    repoURL: https://github.com/Dungx2409/pr-preview-platform.git
+    targetRevision: main
+    path: charts/app
+    helm:
+      valueFiles:
+        - values-shared.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shared
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

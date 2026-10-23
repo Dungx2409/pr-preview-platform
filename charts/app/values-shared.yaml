@@ -1,0 +1,27 @@
+---
+# Values for Tier 1 shared environment (shared-main)
+env: shared
+pr:
+  number: ""
+gitSha: "main"
+
+image:
+  repository: ghcr.io/dungx2409/demo-app
+  tag: "pr-0"
+  pullPolicy: Always
+
+ingress:
+  enabled: true
+  className: tailscale
+  hostname: shared
+
+# ResourceQuota tuned with higher headroom for shared environment
+resourceQuota:
+  enabled: true
+  hard:
+    requestsCpu: "1000m"
+    requestsMemory: "1Gi"
+    limitsCpu: "2000m"
+    limitsMemory: "2Gi"
+    pods: "15"
+    persistentvolumeclaims: "4"
