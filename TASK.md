@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 2 — Cluster platform (T-2.2 Access-model verification)**
+**→ Phase 2 — Cluster platform (T-2.3 Argo CD install + access)**
 
 ---
 
@@ -62,7 +62,7 @@
   - Values + install script under `platform/bootstrap/` and `platform/tailscale/`; policy snippet committed as a *draft* file (owner pastes it); no credentials in Git.
   - *Acceptance:* operator Ready; a test Ingress gets a valid `https://<name>.<tailnet>.ts.net` for a tailnet member.
 
-- [ ] **T-2.2** 🤖 **Access-model verification** (depends T-2.1)
+- [x] **T-2.2** 🤖 **Access-model verification** (depends T-2.1)
   - Script/runbook that proves: member in `group:reviewers` → access; member outside the group → denied; non-member → denied; nothing exposed publicly.
   - *Acceptance:* results table in `docs/security.md`.
 

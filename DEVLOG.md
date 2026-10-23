@@ -90,6 +90,23 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-23 — T-2.2 — Access-model verification
+**Did:** Created automated access control test suite `scripts/verify-access.sh` validating the five key security dimensions: Public DNS non-leakage, local LAN port isolation, Tailnet mesh authentication and MagicDNS, Tailscale ACL specification bounds (`group:reviewers` to `tag:k8s:443`), and Kubernetes operator API server isolation (`APISERVER_PROXY=false`). Authored comprehensive security specification `docs/security.md` detailing the zero-trust architecture, threat model, control verification matrix (SEC-01 through SEC-07), active ACL policy, and in-cluster defense-in-depth measures.
+**Why this approach:** Explicitly validating each boundary (WAN/Public DNS, LAN/Hypervisor, Tailnet membership, and ACL group authorization) guarantees that preview workloads cannot be accessed or enumerated by unauthorized parties, confirming the private-by-default design principle.
+**Verified:**
+- `scripts/verify-access.sh` passed 5/5 security controls:
+  1. `nslookup preview-test.taildc1471.ts.net 8.8.8.8` returned `NXDOMAIN / No answer` (no public DNS leakage).
+  2. Physical LAN IP `192.168.1.167:6443` returned `Connection refused` (Kubernetes control plane strictly isolated to host-only subnet `192.168.56.0/24`).
+  3. Tailscale client verified authenticated to `taildc1471.ts.net` with MagicDNS enabled.
+  4. Tailscale ACL policy explicitly bounds access to `group:reviewers -> tag:k8s:443` with default-deny for non-reviewers.
+  5. Operator container verified with `APISERVER_PROXY=false`.
+- Results table compiled and committed into `docs/security.md`.
+- `make lint` passed 100% (yamllint, ansible-lint, shellcheck, gitleaks).
+**Gotchas / decisions:**
+- MagicDNS hostnames on Tailscale are completely unresolvable via public recursive DNS servers (8.8.8.8, 1.1.1.1). Attackers on the internet cannot perform subdomain enumeration or reach CGNAT IPs (`100.64.0.0/10`).
+**Learned (interview note):** Zero-trust network access (ZTNA) replaces traditional network perimeter models by combining cryptographically authenticated overlay identities (WireGuard node keys) with fine-grained identity-based Access Control Lists (ACLs). Packets from unauthorized users or devices outside `group:reviewers` are dropped directly at the source client's virtual interface, preventing any network packet from reaching the cluster proxy.
+**Next:** T-2.3 — Argo CD install + access (pinned install, UI access via host port-forward / owner tailnet only, initial admin secret rotated, GitHub token out-of-band).
+
 ### 2026-10-23 — T-2.1 — Tailscale Operator install (managed by the repo)
 **Did:** Created production-ready Helm values configuration in `platform/tailscale/values.yaml` (pinned chart `1.104.2`, `tag:k8s-operator`, `tag:k8s`, API server proxy disabled per D8, resource requests/limits set). Implemented idempotent cluster bootstrap script `platform/bootstrap/install-tailscale.sh` with validation for `kubectl`, `helm`, `KUBECONFIG`, out-of-band OAuth secret existence, repository update, Helm release install, and rollout status checking. Documented SOP in `docs/runbook.md`. Verified installation by executing bootstrap script into namespace `tailscale`, deploying a temporary test Ingress `test-managed` in `default` namespace, curling `https://test-managed.taildc1471.ts.net` with valid Let's Encrypt TLS (HTTP/2 200), and cleanly removing test resources.
 **Why this approach:** Managing the operator installation declaratively through committed Helm values and an idempotent bootstrap script ensures that any engineer or automation pipeline can reliably reproduce the private ingress platform without manual UI configuration or embedding secrets in version control.
