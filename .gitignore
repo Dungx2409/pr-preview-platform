@@ -1,0 +1,53 @@
+# Kubernetes
+*kubeconfig*
+*.kubeconfig
+kubeconfig/
+
+# Secrets & Keys
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+
+# Environment & Variables
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+*venv*
+.*venv*
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+
+# Ansible local inventory & artifacts
+ansible/inventory.ini
+ansible/inventory/local.ini
+*.retry
+
+# OS / Editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

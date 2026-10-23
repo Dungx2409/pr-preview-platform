@@ -1,0 +1,84 @@
+SHELL := /usr/bin/env bash
+.SHELLFLAGS := -euo pipefail -c
+.DEFAULT_GOAL := help
+
+# Colors for terminal output
+CYAN := \033[36m
+GREEN := \033[32m
+YELLOW := \033[33m
+RED := \033[31m
+RESET := \033[0m
+
+.PHONY: help
+help: ## Display available make targets
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(CYAN)%-18s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+.PHONY: lint
+lint: lint-yaml lint-ansible lint-shell lint-secrets ## Run all linters (yamllint, ansible-lint, shellcheck, gitleaks)
+	@echo -e "$(GREEN)✓ All linters passed!$(RESET)"
+
+.PHONY: lint-yaml
+lint-yaml: ## Lint YAML files
+	@echo -e "$(CYAN)→ Running yamllint...$(RESET)"
+	yamllint -c .yamllint.yaml .
+
+.PHONY: lint-ansible
+lint-ansible: ## Lint Ansible playbooks and roles
+	@echo -e "$(CYAN)→ Running ansible-lint...$(RESET)"
+	ansible-lint ansible/
+
+.PHONY: lint-shell
+lint-shell: ## Lint shell scripts with shellcheck
+	@echo -e "$(CYAN)→ Running shellcheck...$(RESET)"
+	@scripts=$$(find . -type f -name "*.sh" -not -path "./.venv/*" -not -path "./venv/*"); \
+	if [ -n "$$scripts" ]; then \
+		shellcheck $$scripts; \
+	else \
+		echo "No shell scripts found. Skipping shellcheck."; \
+	fi
+
+.PHONY: lint-secrets
+lint-secrets: ## Scan repository for secrets using gitleaks
+	@echo -e "$(CYAN)→ Running gitleaks detect...$(RESET)"
+	gitleaks detect --no-git --source . --verbose
+
+.PHONY: test
+test: ## Run unit tests (demo-app and exporter)
+	@echo -e "$(CYAN)→ Running tests...$(RESET)"
+	@if [ -d "demo-app/tests" ] || [ -d "exporter/tests" ]; then \
+		python3 -m pytest -v; \
+	else \
+		echo "No unit tests created yet (stub pass for T-0.4)."; \
+	fi
+
+.PHONY: tf-plan
+tf-plan: ## Run terraform plan (read-only, Phase 8 cloud variant)
+	@echo -e "$(YELLOW)Notice: Terraform is deferred to Phase 8 (cloud variant). Skipping.$(RESET)"
+
+.PHONY: ansible-check
+ansible-check: ## Run ansible-playbook in check/diff mode
+	@echo -e "$(CYAN)→ Running ansible-playbook --check --diff...$(RESET)"
+	@if [ -f "ansible/inventory/local.ini" ]; then \
+		ansible-playbook -i ansible/inventory/local.ini ansible/site.yml --check --diff; \
+	else \
+		echo -e "$(RED)Error: ansible/inventory/local.ini not found. Copy local.ini.example first.$(RESET)"; \
+		exit 1; \
+	fi
+
+.PHONY: helm-template
+helm-template: ## Render Helm chart with sample values and validate
+	@echo -e "$(CYAN)→ Rendering Helm chart...$(RESET)"
+	@if [ -f "charts/app/Chart.yaml" ]; then \
+		helm lint charts/app; \
+	else \
+		echo "charts/app/Chart.yaml not found yet. Skipping until T-3.2."; \
+	fi
+
+.PHONY: verify-teardown
+verify-teardown: ## Check no pr-* leftovers in the cluster
+	@echo -e "$(CYAN)→ Verifying cluster teardown...$(RESET)"
+	@if [ -f "scripts/verify-teardown.sh" ]; then \
+		bash scripts/verify-teardown.sh; \
+	else \
+		echo "scripts/verify-teardown.sh not created yet. Skipping until T-4.6."; \
+	fi

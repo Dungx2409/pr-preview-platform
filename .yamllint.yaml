@@ -1,0 +1,16 @@
+---
+yaml-files:
+  - '*.yaml'
+  - '*.yml'
+
+rules:
+  document-start:
+    level: warning
+  line-length:
+    max: 120
+    level: warning
+  truthy:
+    level: warning
+  comments-indentation: false
+  new-line-at-end-of-file:
+    level: error

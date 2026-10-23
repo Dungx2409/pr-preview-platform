@@ -1,0 +1,38 @@
+---
+- name: Cài package cơ bản
+  ansible.builtin.apt:
+    name: [curl, git, vim, htop, ca-certificates]
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Đặt timezone
+  community.general.timezone:
+    name: Asia/Ho_Chi_Minh
+
+- name: Tạo swapfile
+  ansible.builtin.command:
+    cmd: "fallocate -l {{ swap_size }} /swapfile"
+    creates: /swapfile
+
+- name: Phân quyền swapfile
+  ansible.builtin.file:
+    path: /swapfile
+    mode: "0600"
+
+- name: Format swap nếu chưa có
+  ansible.builtin.command: mkswap /swapfile
+  when: ansible_swaptotal_mb == 0
+  changed_when: true
+
+- name: Bật swap
+  ansible.builtin.command: swapon /swapfile
+  when: ansible_swaptotal_mb == 0
+  changed_when: true
+
+- name: Ghi swap vào fstab
+  ansible.posix.mount:
+    path: none
+    src: /swapfile
+    fstype: swap
+    opts: sw
+    state: present

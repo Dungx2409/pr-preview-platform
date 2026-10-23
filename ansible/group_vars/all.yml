@@ -1,0 +1,7 @@
+---
+k3s_node_ip: "{{ ansible_host }}"   # taken from inventory = 192.168.56.10
+k3s_flannel_iface: enp0s8           # host-only NIC — do NOT use enp0s3 (NAT)
+swap_size: 2G
+
+# Kubeconfig is stored OUTSIDE the repo (SPEC §6.2 / AGENTS.md §4).
+kubeconfig_local_path: "{{ lookup('env', 'HOME') }}/.kube/pr-preview.yaml"
