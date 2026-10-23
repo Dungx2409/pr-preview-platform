@@ -91,6 +91,32 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-23 — T-3.4 — Manual deploy to pr-0
+**Did:** Executed end-to-end manual deployment of the full PR preview stack into namespace `pr-0` to validate runtime readiness before GitOps automation:
+- Assisted owner in refreshing GHCR token permissions (`write:packages`), pushing demo app container `ghcr.io/dungx2409/demo-app:pr-0`, and toggling package visibility to Public.
+- Deployed Helm chart `charts/app` to namespace `pr-0` with `image.repository=ghcr.io/dungx2409/demo-app`, `image.tag=pr-0`, `ingress.hostname=pr-0`.
+- Verified live Tailscale Ingress provisioning: ACME DNS-01 TLS certificate for `pr-0.taildc1471.ts.net` was issued in 34s; `curl -s -i https://pr-0.taildc1471.ts.net/` returned HTTP/2 200 with `{env: "pr-0", pr: "local", sha: "3ca3d9d", db: "ok"}`.
+- Verified database state isolation: initial `GET /counter` returned 0; two sequential `POST /counter` operations atomically incremented counter to 1 and 2; subsequent `GET /counter` confirmed 2.
+- Verified in-cluster zero-trust NetworkPolicy isolation via test script executed inside the app container:
+  - DNS resolution to `pr-0-app-postgres` succeeded (`10.43.18.159`).
+  - Same-namespace TCP connection to Postgres (`pr-0-app-postgres:5432`) succeeded (`True`).
+  - Cross-namespace TCP connection to Argo CD (`argocd-server.argocd.svc.cluster.local:80`) was completely blocked (`False`).
+  - Connection to Cloud Instance Metadata IP (`169.254.169.254:80`) was completely blocked (`False`).
+  - Connection to Host-only control plane (`192.168.56.10:6443`) was completely blocked (`False`).
+- Teardown: Uninstalled Helm release `pr-0` and deleted namespace `pr-0`; verified that proxy pod `ts-pr-0-app-...` in `tailscale` namespace was deleted and the device node `pr-0` was auto-revoked from the Tailscale tailnet with zero leftovers.
+**Why this approach:** Performing a manual canary deployment of the complete application, database, and ingress stack prior to wiring Argo CD ApplicationSets verifies that images can be pulled anonymously, secrets bind correctly, ACME certificates resolve cleanly, and NetworkPolicies do not accidentally block intended inter-pod traffic.
+**Verified:**
+- Image pull from GHCR succeeded anonymously (`ghcr.io/dungx2409/demo-app:pr-0`).
+- Tailscale Ingress: `https://pr-0.taildc1471.ts.net` reached over HTTP/2 200 with valid Let's Encrypt certificate.
+- DB counter: Tested 0 -> 1 -> 2 -> 2.
+- NetworkPolicy security verification: 5/5 controls passed (DNS OK, local Postgres OK, cross-namespace DENIED, metadata IP DENIED, host control plane DENIED).
+- Clean teardown: 0 leftover pods, 0 leftover namespaces, 0 zombie tailnet devices.
+- `make lint` and `make test`: All linters and unit tests passed cleanly.
+**Gotchas / decisions:**
+- GHCR images default to Private upon initial push. Making the package Public once enables the k3s cluster to pull images directly over HTTPS without needing imagePullSecrets or registry credentials in the preview namespaces.
+**Learned (interview note):** Running a comprehensive in-pod network boundary check (attempting connections to cluster services, the node IP, and cloud metadata 169.254.169.254) proves that Kubernetes NetworkPolicies enforce true micro-segmentation, preventing compromised preview applications from attacking neighboring tenants or moving laterally across the infrastructure.
+**Next:** T-3.5 — Tier 1 — shared environment (build.yml on push to main, Argo CD Application shared-main tracking main in namespace shared, and verification of updates).
+
 ### 2026-10-23 — T-3.3 — Isolation objects
 **Did:** Implemented comprehensive multi-tenant isolation objects within Helm chart `charts/app/` per SPEC §6.5 & §9:
 - `templates/resourcequota.yaml`: Limits preview namespace consumption to `requests.cpu: 600m`, `requests.memory: 512Mi`, `limits.cpu: 1500m`, `limits.memory: 1Gi`, `pods: 10`, `persistentvolumeclaims: 2`.
