@@ -39,6 +39,7 @@ jobs:
       - name: Build local container image
         run: |
           docker build \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             -t "${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}" \
             -t "${{ env.IMAGE_NAME }}:latest" \
             demo-app/

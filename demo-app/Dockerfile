@@ -32,6 +32,10 @@ COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
 # Copy application source code
 COPY --chown=appuser:appuser src/ /app/
 
+# OCI labels
+LABEL org.opencontainers.image.source="https://github.com/Dungx2409/pr-preview-platform" \
+      org.opencontainers.image.description="FastAPI demo application for PR Preview Platform"
+
 # Environment variables
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED="1" \
