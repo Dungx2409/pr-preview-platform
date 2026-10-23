@@ -1,0 +1,37 @@
+---
+# Helm values for Tailscale Kubernetes Operator
+# Chart: tailscale/tailscale-operator:1.104.2
+# Pinned version per docs/versions.md and SPEC §4.2
+
+# Precreated secret "operator-oauth" in namespace "tailscale"
+oauth:
+  clientId: ""
+  clientSecret: ""
+
+installCRDs: true
+
+operatorConfig:
+  defaultTags:
+    - "tag:k8s-operator"
+  hostname: "tailscale-operator"
+  logging: "info"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+proxyConfig:
+  defaultTags: "tag:k8s"
+  firewallMode: "auto"
+
+# D8: API server (port 6443) is strictly isolated to host-only interface, not exposed via Tailscale
+apiServerProxyConfig:
+  allowImpersonation: "false"
+  mode: "false"
+
+ingressClass:
+  name: "tailscale"
+  enabled: true

@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 2 — Cluster platform (T-2.1 Tailscale Operator install managed by repo)**
+**→ Phase 2 — Cluster platform (T-2.2 Access-model verification)**
 
 ---
 
@@ -58,7 +58,7 @@
   - Research the "is the preview up?" options A/B/C (SPEC §6.7) and recommend one.
   - *Acceptance:* ≤ 1-page comparison in `docs/decisions.md` (Tailscale operator vs fallback D13) with **measured numbers**, risks, and a clear GO/NO-GO; DEVLOG updated; spike namespace cleaned. **After the owner decides:** GO → proceed with T-2.1/T-2.2 as written; NO-GO → owner picks the D13 fallback and the agent rewrites T-2.1/T-2.2/T-3.4/T-4.4 accordingly.
 
-- [ ] **T-2.1** 🤝 **Tailscale Operator install (managed by the repo)** (depends T-2.0 = GO)
+- [x] **T-2.1** 🤝 **Tailscale Operator install (managed by the repo)** (depends T-2.0 = GO)
   - Values + install script under `platform/bootstrap/` and `platform/tailscale/`; policy snippet committed as a *draft* file (owner pastes it); no credentials in Git.
   - *Acceptance:* operator Ready; a test Ingress gets a valid `https://<name>.<tailnet>.ts.net` for a tailnet member.
 
