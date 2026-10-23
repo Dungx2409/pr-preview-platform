@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 2 — Cluster platform (T-2.0 Tailscale private-Ingress spike)**
+**→ Phase 2 — Cluster platform (T-2.1 Tailscale Operator install managed by repo)**
 
 ---
 
@@ -50,7 +50,7 @@
 
 ## Phase 2 — Cluster platform (private access)
 
-- [ ] **T-2.0** 🤝 **Tailscale private-Ingress spike (go/no-go)** (depends T-1.6)
+- [x] **T-2.0** 🤝 **Tailscale private-Ingress spike (go/no-go)** (depends T-1.6)
   - Owner prepares (agent drafts JSON/instructions only): tailnet policy with `tagOwners`, `group:reviewers`, access rule to proxies on 443; OAuth client for the operator (scopes per **current** docs); credentials passed out-of-band.
   - Agent installs the Tailscale Operator (pinned) in namespace `spike-ts`, deploys a test app with an Ingress (`ingressClassName: tailscale`, **no funnel**).
   - Measure and record (real numbers): time from Ingress creation → reachable by a **second tailnet member**; first-connection TLS delay; RAM/CPU of operator + each proxy pod with 1, 3, 5 Ingresses; behavior when deleting an Ingress (proxy pod and tailnet device gone?) and when recreating the same hostname (renamed?); changing the hostname of an existing Ingress; **tagged-resource count and ephemeral-minutes usage after several hours**.

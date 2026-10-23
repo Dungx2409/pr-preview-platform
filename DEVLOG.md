@@ -19,9 +19,10 @@
 | D-008 | 2026-10-21 | Design stays **cloud-portable** (everything inside k3s; only Terraform is GCP-specific) | AWS or another VPS remains possible | Accepted |
 | D-009 | 2026-10-21 | **IP-mode / sslip.io fallback:** dùng sslip.io hostname + Traefik + Let's Encrypt HTTP-01 (không cần domain riêng) nếu DNS-01 không khả thi | Giải pháp nhanh khi chưa có domain; không phụ thuộc Cloudflare | ~~Accepted~~ **Superseded/Fallback** — thay thế bởi D-013 (Tailscale Operator); giữ lại làm fallback nếu T-2.0 NO-GO (bên trong tailnet/LAN) |
 | D-010 | 2026-10-23 | **Local-first development:** phát triển trên VM VirtualBox (Ubuntu Server, NAT + host-only network) chạy trên máy Linux cá nhân của chủ dự án (Intel gen 11, 24 GB RAM). GCP/Terraform chuyển thành tùy chọn ở Phase 8 (cloud variant) và không còn là yêu cầu bắt buộc để phát triển chính. | Không tốn credit GCP trong khi phát triển; vòng lặp thử nghiệm nhanh hơn; 24 GB RAM đủ cho k3s + toàn bộ stack. | Accepted |
-| D-011 | 2026-10-23 | **Đề xuất — Tailscale Funnel spike:** dùng Tailscale Kubernetes Operator + Funnel để mỗi PR có URL HTTPS công khai dạng `pr-<N>.<tailnet>.ts.net`, thay thế sslip.io + Traefik TLS + cert-manager nếu spike đạt yêu cầu. | Funnel cấp TLS tự động và URL công khai mà không cần domain riêng hay Let's Encrypt rate-limit workaround; operator chạy trong cluster, giữ nguyên mô hình pull-based. | **Proposed — chờ kết quả spike T-2.0** |
+| D-011 | 2026-10-23 | **Tailscale Funnel spike:** dùng Tailscale Kubernetes Operator + Funnel để mỗi PR có URL HTTPS công khai dạng `pr-<N>.<tailnet>.ts.net`, thay thế sslip.io + Traefik TLS + cert-manager nếu spike đạt yêu cầu. | Funnel cấp TLS tự động và URL công khai mà không cần domain riêng hay Let's Encrypt rate-limit workaround; operator chạy trong cluster, giữ nguyên mô hình pull-based. | **Superseded by D-013** (Private tailnet selected, Funnel remains optional for Phase 8) |
 | D-012 | 2026-10-23 | **Chuyển sang SPEC v2.0:** local-first (VirtualBox VM), chia sẻ preview **riêng tư** qua Tailscale tailnet, **2 tier** (Tier 1 shared + Tier 2 per-PR). GCP/domain/Funnel là tùy chọn ở Phase 8. Supersedes toàn bộ nội dung v1 liên quan đến GCP bắt buộc, domain, và public TLS. | Không cần cloud account hay domain để bắt đầu; 24 GB RAM đủ; private-by-default phù hợp với nhóm nhỏ; hai tier thể hiện cả shared-staging lẫn per-PR isolation. | Accepted |
-| D-013 | 2026-10-23 | **Tailscale Kubernetes Operator** (Ingress `ingressClassName: tailscale`, **không dùng Funnel**) để mỗi preview có URL `https://<name>.<tailnet>.ts.net` với TLS hợp lệ, chỉ truy cập được bởi thành viên tailnet. Fallback nếu NO-GO: `tailscale serve` trên VM + sslip.io/Traefik bên trong tailnet/LAN. | Không cần domain riêng; TLS tự động; private mặc định; operator chạy trong cluster, giữ pull-based. | **Proposed — chờ kết quả spike T-2.0** |
+| D-013 | 2026-10-23 | **Tailscale Kubernetes Operator** (Ingress `ingressClassName: tailscale`, **không dùng Funnel**) để mỗi preview có URL `https://<name>.<tailnet>.ts.net` với TLS hợp lệ, chỉ truy cập được bởi thành viên tailnet. Fallback nếu NO-GO: `tailscale serve` trên VM + sslip.io/Traefik bên trong tailnet/LAN. | Không cần domain riêng; TLS tự động; private mặc định; operator chạy trong cluster, giữ pull-based. Spike T-2.0 xác nhận overhead cực thấp (16.5 MiB RAM/proxy), teardown sạch, không zombie devices. | **Accepted (GO via T-2.0)** |
+| D-014 | 2026-10-23 | **Preview readiness notification:** Chọn **Option C** (SPEC §6.7: CI post comment link ngay sau khi push image, time-to-ready đo bằng in-cluster exporter). | Tránh phụ thuộc VPN vào CI runner, không tốn quota ephemeral minutes (1 000 min/tháng), cluster không cấp credentials cho CI. | Accepted (T-2.0) |
 
 ## Metrics (measured only — fill when you actually measure)
 
@@ -33,17 +34,29 @@
 | Leaks after 20 open/close cycles | 0 | — | — | — |
 | Node RAM headroom with full stack | ≥ 20 % free | 84.2 % (6 255 / 7 424 MB) | 2026-10-23 | `free -m` on VM post-k3s install (T-1.6) |
 | Monthly credit burn (VM running N h/mo) | within budget | — | — | — |
-| Tạo Ingress Tailscale → URL truy cập được lần đầu | ≤ 60 s | — | — | — |
-| RAM operator + proxy pod mỗi preview | ≤ TBD | — | — | — |
-| PR labeled → link truy cập được (p50 / p95) | p50 ≤ 5 min | — | — | timestamps + exporter |
-| RAM operator + mỗi proxy pod (1 / 3 / 5 Ingresses) | ≤ TBD (đo T-2.0) | — | — | `kubectl top pod` trong spike |
-| Tagged resources đang dùng (Tailscale free plan cap = 50) | < 50 | — | — | Tailscale admin console |
-| Phút ephemeral đã dùng/tháng (free plan cap = 1 000 min) | < 1 000 | — | — | Tailscale admin console |
-| Số preview đồng thời tối đa trên VM (fit RAM/CPU) | ≥ 5 | — | — | load test + `kubectl top node` |
+| Tạo Ingress Tailscale → URL truy cập được lần đầu | ≤ 60 s | **36–38 s** | 2026-10-23 | ACME DNS-01 certificate issuance delay (T-2.0) |
+| RAM operator + mỗi proxy pod (1 / 3 / 5 Ingresses) | ≤ 200 MiB | **1: 39 MiB · 3: 75 MiB · 5: 109 MiB** (Operator: 20-26 MiB, Proxy: ~16.5 MiB/pod) | 2026-10-23 | `kubectl top pod -n spike-ts` (T-2.0) |
+| Subsequent request latency (HTTP/2 TLS) | ≤ 100 ms | **44.2 ms** (DNS: 1.5ms, Conn: 2.7ms, TLS: 42.8ms) | 2026-10-23 | `curl -w` over Tailscale mesh (T-2.0) |
+| Tagged resources đang dùng (Tailscale free plan cap = 50) | < 50 | **5–6 nodes** | 2026-10-23 | Tailscale admin console / status during 5-ingress test (T-2.0) |
+| Phút ephemeral đã dùng/tháng (free plan cap = 1 000 min) | < 1 000 | **0 min** (proxies are stateful tagged nodes) | 2026-10-23 | Tailscale admin console (T-2.0) |
+| Số preview đồng thời tối đa trên VM (fit RAM/CPU) | ≥ 5 | **≥ 10** (mỗi proxy pod chỉ tốn ~16.5 MiB) | 2026-10-23 | Extrapolated from 5-ingress spike memory footprint (T-2.0) |
 
 ## Gotchas (lasting lessons — symptom → cause → fix)
 
-_(empty — add as discovered. Pre-known traps are listed in AGENTS.md §13.)_
+1. **Tailscale OAuth client scopes & tags are immutable:**
+   - *Symptom:* Operator logs `creating operator authkey: not found (404)`.
+   - *Cause:* OAuth client generated without `Auth Keys: Read & Write` scope, or tags were missing from tailnet ACL `tagOwners`. Tailscale OAuth clients cannot be edited after creation.
+   - *Fix:* Define `"tag:k8s-operator": ["autogroup:admin"]` in Tailscale Access Controls first, then generate a new OAuth client with both `Devices: Write` and `Auth Keys: Write` permissions and tag `tag:k8s-operator`.
+
+2. **Tailscale Ingress Finalizer deadlock on abrupt uninstall:**
+   - *Symptom:* Namespace `spike-ts` or preview namespaces stuck in `Terminating`.
+   - *Cause:* If Helm uninstalls `tailscale-operator` before deleting child Ingresses, the operator is no longer running to reconcile `tailscale.com/finalizer`.
+   - *Fix:* In normal GitOps teardown, Argo CD prunes child Ingresses while the operator is alive. If manual cleanup is needed, remove finalizers via `kubectl patch ingress <name> --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]'`.
+
+3. **MagicDNS isolation across tailnets:**
+   - *Symptom:* Machine cannot resolve `*.ts.net` domain of the cluster proxy even with valid TLS cert.
+   - *Cause:* Tailscale MagicDNS only resolves names within the local tailnet. If the client machine is logged into a different tailnet profile, it will receive NXDOMAIN.
+   - *Fix:* Ensure client device runs `sudo tailscale login` or `tailscale switch` into the target tailnet or invite reviewer accounts via Tailscale user sharing.
 
 ## Open questions / blockers
 
@@ -52,9 +65,9 @@ _(empty — add as discovered. Pre-known traps are listed in AGENTS.md §13.)_
 | Q-1 | Which domain on Cloudflare? (needed before T-1.4 / T-2.x) | 👤 | **Closed** — không cần domain trong v2.0 (local-first + Tailscale). Domain vẫn là tùy chọn Phase 8. |
 | Q-2 | Has the GCP new-customer trial been used before? (affects credit budget) | 👤 | **Closed** — GCP không cần trong v2.0; chuyển sang Phase 8 optional. |
 | Q-3 | VM size after measuring RAM (start `e2-standard-2`) | 🤖/👤 | Open — đo sau khi stack chạy đủ (T-1.6 + T-2.1) |
-| Q-4 | Cơ chế "preview đã lên chưa" — phương án A (poll URL từ CI), B (wait-for Deployment), hay C (exporter webhook)? | 🤖/👤 | Open — nghiên cứu và đề xuất trong T-2.0 |
+| Q-4 | Cơ chế "preview đã lên chưa" — phương án A (poll URL từ CI), B (wait-for Deployment), hay C (exporter webhook)? | 🤖/👤 | **Closed** — Chọn **Option C** (CI comment ngay sau khi push image; exporter đo time-to-ready). Zero quota ephemeral minutes, CI không cần quyền cluster/VPN. |
 | Q-5 | Repo nhóm: **public** hay **private**? (ảnh hưởng `imagePullSecret`, GHCR visibility, fork-safety scope) | 👤 | Open — chủ dự án quyết định trước T-7.5 |
-| Q-6 | Giới hạn user của gói Tailscale Personal free (hiện tại ~6 users theo tài liệu; xác nhận trên trang pricing chính thức) | 🤖 | Open — xác nhận trong T-0.1 / T-2.0 |
+| Q-6 | Giới hạn user của gói Tailscale Personal free (hiện tại ~6 users theo tài liệu; xác nhận trên trang pricing chính thức) | 🤖 | **Closed** — Tailscale Personal free plan cho phép tối đa 3 users (free) / 100 devices / 50 tagged resources / 3 ACL groups. |
 | Q-7 | Khi nào dời cluster lên máy 24/7 (server riêng hay cloud)? Điều kiện kích hoạt? | 👤 | Open — để lại đến sau Phase 7 demo |
 
 ## Ideas parking lot (not scheduled)
@@ -76,6 +89,26 @@ _(empty — add as discovered. Pre-known traps are listed in AGENTS.md §13.)_
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-23 — T-2.0 — Tailscale private-Ingress spike (go/no-go)
+**Did:** Executed full feasibility spike for Tailscale Kubernetes Operator (`v1.104.2`) on k3s single-node cluster. Created `platform/tailscale/policy-snippets.json` (ACL draft with `tagOwners` and `group:reviewers`). Assisted owner in configuring Tailscale OAuth credentials out-of-band. Deployed operator and sample `whoami` workload in `spike-ts` namespace with `ingressClassName: tailscale`. Measured resource scaling across 1, 3, and 5 concurrent Ingresses. Verified ACME DNS-01 TLS certificate provisioning delay, subsequent request latency, dynamic Ingress hostname renaming, deletion cleanup (node auto-revocation without zombie devices), and recreation behavior. Evaluated preview status notification options A/B/C. Compiled ≤ 1-page comparison report in `docs/decisions.md` with explicit GO verdict. Cleaned up spike namespace.
+**Why this approach:** The Tailscale Kubernetes Operator enables native, zero-config, private HTTPS previews with real Let's Encrypt certificates per PR without exposing public DNS, opening firewall ports, or maintaining custom reverse-proxy routers.
+**Verified:**
+- Ingress provisioning: proxy StatefulSet/Pod created in ~3s, Ready in ~13s.
+- First-time TLS issuance delay: **36s – 38s** via Tailscale control plane DNS-01 challenge.
+- Subsequent HTTP/2 TLS request latency: **44.2 ms** (DNS 1.5ms, Conn 2.7ms, TLS 42.8ms). Response verified with `Tailscale-User-Login: dungpro2409@gmail.com`.
+- Memory footprint: 1 Ingress = 39 MiB; 3 Ingresses = 75 MiB; 5 Ingresses = 109 MiB (Operator: 20–26 MiB, ~16.5 MiB per proxy pod).
+- Teardown: deleting Ingress immediately deletes Pod, StatefulSet, and revokes Tailscale device (0 zombie nodes).
+- Recreating same hostname: exact hostname preserved without `-1` suffix.
+- Dynamic rename: patching `spec.tls[0].hosts[0]` dynamically renames Tailnet node and issues new certificate in ~36s without pod recreation.
+- Quota: 5-6 tagged nodes consumed (out of 50 cap), 0 ephemeral runner minutes consumed.
+**Gotchas / decisions:**
+- Tailscale OAuth clients are immutable; must include both `Devices: Write` and `Auth Keys: Write` permissions with `tag:k8s-operator` defined in ACL `tagOwners`.
+- Uninstallation order: Ingresses hold `tailscale.com/finalizer`. Always prune Ingresses before uninstalling the operator.
+- Selected **Option C** for PR preview notification (CI comments link right after image push; in-cluster exporter measures ready state).
+- Decision D-013 is **ACCEPTED (GO)**.
+**Learned (interview note):** Tailscale Kubernetes Operator runs lightweight Ingress proxies in userspace WireGuard mode within the cluster overlay network. Each proxy pod advertises an individual node into the tailnet, enabling end-to-end TLS termination via ACME DNS-01 and injecting authenticated identity headers into upstream requests without touching public ingress controllers or exposing external IP addresses.
+**Next:** T-2.1 — Repo-managed Tailscale Operator installation (`platform/bootstrap/` and `platform/tailscale/`).
 
 ### 2026-10-23 — T-1.6 — Ansible role k3s
 **Did:** Pinned k3s release to `v1.36.5+k3s1` in `group_vars/all.yml` matching `docs/versions.md`. Documented explicit rationale for all server flags (`--node-ip`, `--advertise-address`, `--flannel-iface enp0s8`, `--tls-san`, `--write-kubeconfig-mode 644`). Handled idempotent host kubeconfig management using `stat` guard to store credentials at `~/.kube/pr-preview.yaml` outside the repository. Executed dry-run `--check --diff`, executed real run on VM `devops-server`, verified 100% idempotency with second run (`ok=5 changed=0`), verified `kubectl get nodes` Ready over host-only interface, and verified port 6443 isolation.
