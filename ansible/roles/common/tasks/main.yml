@@ -1,38 +1,71 @@
 ---
-- name: Cài package cơ bản
+- name: Install essential security and system packages
   ansible.builtin.apt:
-    name: [curl, git, vim, htop, ca-certificates]
+    name:
+      - curl
+      - git
+      - vim
+      - htop
+      - ca-certificates
+      - fail2ban
+      - unattended-upgrades
     update_cache: true
     cache_valid_time: 3600
 
-- name: Đặt timezone
+- name: Set system timezone
   community.general.timezone:
     name: Asia/Ho_Chi_Minh
 
-- name: Tạo swapfile
+- name: Create swapfile if not present
   ansible.builtin.command:
     cmd: "fallocate -l {{ swap_size }} /swapfile"
     creates: /swapfile
 
-- name: Phân quyền swapfile
+- name: Set permissions on swapfile
   ansible.builtin.file:
     path: /swapfile
     mode: "0600"
 
-- name: Format swap nếu chưa có
+- name: Format swapfile if swap is disabled
   ansible.builtin.command: mkswap /swapfile
   when: ansible_swaptotal_mb == 0
   changed_when: true
 
-- name: Bật swap
+- name: Enable swap
   ansible.builtin.command: swapon /swapfile
   when: ansible_swaptotal_mb == 0
   changed_when: true
 
-- name: Ghi swap vào fstab
+- name: Persist swap entry in /etc/fstab
   ansible.posix.mount:
     path: none
     src: /swapfile
     fstype: swap
     opts: sw
     state: present
+
+- name: Apply SSH hardening configuration
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+      PubkeyAuthentication yes
+  notify: Restart ssh
+
+- name: Ensure fail2ban service is enabled and running
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Ensure unattended-upgrades service is enabled and running
+  ansible.builtin.service:
+    name: unattended-upgrades
+    state: started
+    enabled: true
+  ignore_errors: "{{ ansible_check_mode }}"
