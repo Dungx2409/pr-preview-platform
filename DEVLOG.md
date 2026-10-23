@@ -77,6 +77,14 @@ _(empty — add as discovered. Pre-known traps are listed in AGENTS.md §13.)_
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-23 — T-0.1 — GitHub Repository setup & Phase 0 completion
+**Did:** Initialized standalone git repository directly in `Documents/pr-preview-platform`. Created public GitHub repository `Dungx2409/pr-preview-platform` via GitHub CLI. Configured GitHub label `preview`. Configured branch protection rules on `main` (enforced strict PR check on "Lint & Safety Checks", disallowing force pushes and branch deletions). Resolved upstream Ansible collection requirement on CI runner. Verified base CI workflow execution (`✓ passed`).
+**Why this approach:** Hosting the git root at the repository root guarantees that GitHub Actions workflows trigger correctly from `.github/workflows/` and establishes the required PR gate before Phase 1.
+**Verified:** `gh repo view Dungx2409/pr-preview-platform` confirmed public status; `gh run list` confirmed green CI run on commit `7f6b1cd`; `gh api .../branches/main/protection` confirmed protection rules active.
+**Gotchas / decisions:** GitHub Actions runner requires `ansible-galaxy collection install -r ansible/requirements.yml` to resolve `community.general` and `ansible.posix` modules during `ansible-lint`.
+**Learned (interview note):** Branch protection rules enforce code quality and security checks before any code reaches production branches, ensuring GitOps repositories maintain deterministic and verified states.
+**Next:** Phase 0 complete. Proceed to Phase 1: T-1.0 (Local VM documentation & snapshot) and T-1.5 (Ansible role common).
+
 ### 2026-10-23 — T-0.4 — Makefile + pre-commit + base CI
 **Did:** Created `Makefile` with targets `lint` (`yamllint`, `ansible-lint`, `shellcheck`, `gitleaks`), `test`, `tf-plan`, `ansible-check`, `helm-template`, `verify-teardown`. Created `.yamllint.yaml` and `.ansible-lint` configurations. Fixed formatting issues across all Ansible playbooks/roles. Created `.pre-commit-config.yaml` with pinned gitleaks, yamllint, and shellcheck hooks. Created `.github/workflows/ci.yml` running `make lint` and `make test` using pinned actions (`actions/checkout@v7.0.1`, `actions/setup-python@v7.1.0`). Verified secret detection with a throw-away branch test.
 **Why this approach:** Provides a unified command interface via `make` across local developer environments and CI, ensuring identical linting and validation behavior.
