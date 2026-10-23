@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.4 Manual deploy to `pr-0`)**
+**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.5 Tier 1 — shared environment)**
 
 ---
 
@@ -86,7 +86,7 @@
 - [x] **T-3.3** 🤖 **Isolation objects** (depends T-3.2) — ResourceQuota, LimitRange, default-deny NetworkPolicy + allows, PSS labels.
   - *Acceptance:* rendered manifests reviewed; a quota-exceeding test is rejected.
 
-- [ ] **T-3.4** 🤝 **Manual deploy to `pr-0`** (depends T-3.3, T-2.1)
+- [x] **T-3.4** 🤝 **Manual deploy to `pr-0`** (depends T-3.3, T-2.1)
   - Push image to GHCR (package public, 👤); `helm install` into `pr-0` (🟡).
   - *Acceptance:* a tailnet member opens `https://pr-0.<tailnet>.ts.net`; DB counter works; from the pod, other namespaces and any metadata address are unreachable; then uninstall and delete `pr-0` with no leftovers (incl. proxy/device).
 
