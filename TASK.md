@@ -14,13 +14,13 @@
 
 ## Phase 0 — Foundation
 
-- [ ] **T-0.1** 👤 **Prerequisites checklist**
+- [x] **T-0.1** 👤 **Prerequisites checklist**
   - GitHub: **public** repo `pr-preview-platform`; Actions enabled; branch protection on `main` (PR required, status checks); label `preview` created.
   - Local tools installed: git, VirtualBox, ansible, ansible-lint, kubectl, helm, docker, make, python 3, yamllint, shellcheck, gitleaks.
   - Tailscale: free account + tailnet created; MagicDNS + HTTPS enabled; **neutral device names** (no personal info — HTTPS publishes names in public certificate logs).
   - Confirm the Ubuntu Server VM exists (NAT + host-only adapters) and note its real RAM/vCPU/disk.
   - Send back (no secret values!): GitHub owner/repo, VM specs, tailnet name.
-  - *Acceptance:* owner confirms each bullet.
+  - *Acceptance:* owner confirms each bullet. Repo `Dungx2409/pr-preview-platform` created, Actions green, branch protection active.
 
 - [x] **T-0.2** 🤖 **Repo skeleton**
   - Create the layout from SPEC §5 (keep `infra/terraform/` as an empty placeholder with a README saying "Phase 8"), `.gitignore` (kubeconfig, `*.pem`, `.env`, `.venv`, `inventory/local.ini`, tfstate/tfvars…), `.editorconfig`, README stub, PR template referencing task IDs, `CODEOWNERS`.
