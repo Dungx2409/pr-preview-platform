@@ -43,6 +43,7 @@
 | Image | Pinned Tag | Official Source URL | Notes |
 |---|---|---|---|
 | **Python Base Image** | `python:3.10-slim` | https://hub.docker.com/_/python | Demo app & preview-exporter base image |
+| **FastAPI** | `0.161.1` | https://pypi.org/project/fastapi/ | Demo app web framework (Starlette 1.7.0, 0 CVEs) |
 | **PostgreSQL** | `postgres:16-alpine` | https://hub.docker.com/_/postgres | Ephemeral database per preview namespace |
 | **Trivy Scanner** | `v0.76.1` | https://github.com/aquasecurity/trivy/releases/tag/v0.76.1 | Image vulnerability scanner |
 
