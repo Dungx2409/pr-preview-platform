@@ -178,3 +178,26 @@ KUBECONFIG=~/.kube/pr-preview.yaml kubectl patch ingress <ingress-name> -n <name
   --type=json -p='[{"op": "remove", "path": "/metadata/finalizers"}]'
 ```
 
+### Install Argo CD (GitOps Engine)
+Argo CD is pinned to chart `argo/argo-cd:10.10.5` (`v3.5.6`) under namespace `argocd`. UI is strictly isolated (ClusterIP only, no public or tailnet Ingress).
+
+1. Create GitHub read-only token Secret out-of-band:
+```bash
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl create namespace argocd --dry-run=client -o yaml | KUBECONFIG=~/.kube/pr-preview.yaml kubectl apply -f -
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl create secret generic github-token \
+  --namespace=argocd \
+  --from-literal=token="<GITHUB_PAT>"
+```
+
+2. Execute bootstrap script:
+```bash
+platform/bootstrap/install-argocd.sh
+```
+
+3. Access UI locally via Port-Forward (Host only):
+```bash
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+Open `https://localhost:8080` in your host browser. Login as `admin`.
+
+

@@ -32,7 +32,8 @@
 | PR closed → everything gone | ≤ 3 min | — | — | — |
 | Rebuild from empty project | ≤ 30 min | — | — | — |
 | Leaks after 20 open/close cycles | 0 | — | — | — |
-| Node RAM headroom with full stack | ≥ 20 % free | 84.2 % (6 255 / 7 424 MB) | 2026-10-23 | `free -m` on VM post-k3s install (T-1.6) |
+| Node RAM headroom with full stack | ≥ 20 % free | 77.7 % free (5 767 / 7 424 MB available, 1 657 MB used) | 2026-10-23 | `free -m` on VM post-k3s + Tailscale + Argo CD (T-2.3) |
+| RAM Argo CD stack (5 pods) | ≤ 300 MiB | **118 MiB** (server 44Mi, app-controller 24Mi, apps-controller 24Mi, repo-server 21Mi, redis 5Mi) | 2026-10-23 | `kubectl top pod -n argocd` (T-2.3) |
 | Monthly credit burn (VM running N h/mo) | within budget | — | — | — |
 | Tạo Ingress Tailscale → URL truy cập được lần đầu | ≤ 60 s | **36–38 s** | 2026-10-23 | ACME DNS-01 certificate issuance delay (T-2.0) |
 | RAM operator + mỗi proxy pod (1 / 3 / 5 Ingresses) | ≤ 200 MiB | **1: 39 MiB · 3: 75 MiB · 5: 109 MiB** (Operator: 20-26 MiB, Proxy: ~16.5 MiB/pod) | 2026-10-23 | `kubectl top pod -n spike-ts` (T-2.0) |
@@ -89,6 +90,24 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-23 — T-2.3 — Argo CD install + access
+**Did:** Created production-ready Helm values in `platform/argocd/values.yaml` (pinned chart `10.10.5` with AppVersion `v3.5.6`, `service.type: ClusterIP`, ingress disabled, `applicationSet.enabled: true`, Dex and Notifications disabled to conserve ~150 MiB RAM, resource requests/limits defined). Implemented bootstrap script `platform/bootstrap/install-argocd.sh` supporting out-of-band `github-token` secret injection, automated rollout verification, and automated bcrypt password rotation. Assisted owner in creating GitHub read-only token secret `github-token`. Successfully deployed Argo CD into namespace `argocd`, rotated initial admin secret to owner's requested password, verified deletion of `argocd-initial-admin-secret`, and verified API authentication over local port-forward.
+**Why this approach:** Keeping Argo CD strictly unexposed (ClusterIP only, no public ingress, no Tailscale ingress) limits control plane access exclusively to the cluster administrator via local `kubectl port-forward`, preventing unauthorized reviewers or network eavesdroppers from accessing cluster management interfaces.
+**Verified:**
+- `platform/bootstrap/install-argocd.sh` executed cleanly; all 5 pods (`argocd-server`, `argocd-repo-server`, `argocd-applicationset-controller`, `argocd-redis`, `argocd-application-controller-0`) reached Ready 1/1.
+- Initial secret `argocd-initial-admin-secret` was deleted; bcrypt hash in `argocd-secret` was patched.
+- Local port-forward test (`kubectl port-forward svc/argocd-server -n argocd 8443:443`): `curl https://localhost:8443` returned `HTTP/1.1 200 OK`.
+- Authentication test: `POST /api/v1/session` with username `admin` and password `Admin` returned valid JWT token with subject `admin:login`; invalid credentials correctly returned 401 `Invalid username or password`.
+- Network isolation: All services in `argocd` are `ClusterIP`; 0 Ingress resources; UI is completely unreachable from LAN (`192.168.1.x`) and Tailnet members.
+- RAM footprint measured via `kubectl top pod -n argocd`: **118 MiB** total across all 5 pods.
+- Node RAM headroom measured via `free -m`: **77.7 % available** (5 767 / 7 424 MB free memory).
+- `make lint` passed 100% (yamllint, ansible-lint, shellcheck, gitleaks).
+**Gotchas / decisions:**
+- Disabling Dex and Notifications saves ~150 MiB of VM RAM while preserving all essential GitOps and ApplicationSet capabilities needed for PR previews.
+- Argo CD admin password rotation can be performed declaratively and non-interactively by generating a bcrypt hash using Python (`bcrypt.hashpw`) and patching `argocd-secret` directly.
+**Learned (interview note):** The GitOps engine manages cluster state and has cluster-admin privileges. Exposing the GitOps UI over public or shared network perimeters introduces severe privilege escalation risks. Securing Argo CD via ClusterIP service isolation and local port-forwarding ensures that only users with direct kubeconfig cluster access can trigger administrative sync operations.
+**Next:** T-2.4 — AppProject `previews` (restrict allowed Git sources, destinations to `shared` and `pr-*` namespaces, and cluster-resource whitelist to `Namespace`).
 
 ### 2026-10-23 — T-2.2 — Access-model verification
 **Did:** Created automated access control test suite `scripts/verify-access.sh` validating the five key security dimensions: Public DNS non-leakage, local LAN port isolation, Tailnet mesh authentication and MagicDNS, Tailscale ACL specification bounds (`group:reviewers` to `tag:k8s:443`), and Kubernetes operator API server isolation (`APISERVER_PROXY=false`). Authored comprehensive security specification `docs/security.md` detailing the zero-trust architecture, threat model, control verification matrix (SEC-01 through SEC-07), active ACL policy, and in-cluster defense-in-depth measures.

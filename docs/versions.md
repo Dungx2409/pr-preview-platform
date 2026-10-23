@@ -12,7 +12,7 @@
 | Component | Pinned Version | Official Source URL | Notes |
 |---|---|---|---|
 | **k3s** | `v1.36.5+k3s1` | https://update.k3s.io/v1-release/channels/stable | Stable channel release. (Compatible with host kubectl `v1.35.9`) |
-| **Argo CD** | `v3.5.6` | https://github.com/argoproj/argo-cd/releases/tag/v3.5.6 | GitOps engine for Tier 1 & Tier 2 previews |
+| **Argo CD** | `v3.5.6` (Chart `10.10.5`) | https://argoproj.github.io/argo-helm | GitOps engine for Tier 1 & Tier 2 previews. Pinned chart `argo/argo-cd:10.10.5` with AppVersion `v3.5.6` |
 | **Tailscale Operator** | `1.104.2` | https://pkgs.tailscale.com/helmcharts | Helm chart `tailscale/tailscale-operator` |
 | **kube-prometheus-stack** | `92.11.0` | https://prometheus-community.github.io/helm-charts | AppVersion: `v0.94.1`. Monitoring stack |
 
