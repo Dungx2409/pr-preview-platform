@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 1 — Local VM + Ansible (T-1.0 / T-1.5)**
+**→ T-1.5 (🤖 Ansible role common)**
 
 ---
 
@@ -36,7 +36,7 @@
 
 ## Phase 1 — Local VM + Ansible
 
-- [~] **T-1.0** 🤝 **Local VM documented and snapshotted**
+- [x] **T-1.0** 🤝 **Local VM documented and snapshotted**
   - Record real VM spec, adapters (NAT + host-only) and addressing in `docs/runbook.md` (no secrets); SSH key-only login from the host works; take a **base snapshot** before Ansible changes; write "recreate the VM from scratch" steps.
   - *Acceptance:* a second person could recreate the VM from the runbook; snapshot name recorded in DEVLOG.
 

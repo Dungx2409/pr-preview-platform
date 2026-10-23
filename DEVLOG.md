@@ -77,6 +77,14 @@ _(empty — add as discovered. Pre-known traps are listed in AGENTS.md §13.)_
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-23 — T-1.0 — Local VM documented and snapshotted
+**Did:** Measured and recorded physical VM specs into `docs/runbook.md` (RAM 8 GB, 2 vCPU, 25.6 GB VDI disk, Adapter 1 NAT with port forwarding 2222→22, Adapter 2 Host-Only `vboxnet0` with static IP `192.168.56.10`). Wrote full "recreate the VM from scratch" SOP (VirtualBox CLI commands, Ubuntu 24.04 install, Netplan static host-only IP, SSH key-only configuration). Documented headless management commands and verified snapshot tree (`clean-os-ssh-ready`, `base vm`, `k3s-ok`).
+**Why this approach:** Having a precise and reproducible runbook ensures the development environment can be rebuilt reliably by any engineer in under 30 minutes, meeting the Disaster Recovery target.
+**Verified:** `VBoxManage showvminfo devops-server` verified hardware specs; `VBoxManage snapshot "devops-server" list` verified active snapshots; `make lint` passed.
+**Gotchas / decisions:** VM network isolates cluster traffic: Adapter 1 handles outbound external traffic while Adapter 2 restricts Kubernetes API (6443) and SSH to host-only subnet `192.168.56.0/24`. Base snapshot `base vm` is designated as the rollback baseline before running destructive playbook tests.
+**Learned (interview note):** Dual-adapter networking (NAT + Host-Only) is a standard pattern for local Kubernetes labs: it grants workloads internet egress for image pulls without exposing control plane ports (6443) or node SSH to the external local network.
+**Next:** T-1.5 — Verify and run Ansible role `common` (OS updates, fail2ban, SSH hardening, swapfile).
+
 ### 2026-10-23 — T-0.1 — GitHub Repository setup & Phase 0 completion
 **Did:** Initialized standalone git repository directly in `Documents/pr-preview-platform`. Created public GitHub repository `Dungx2409/pr-preview-platform` via GitHub CLI. Configured GitHub label `preview`. Configured branch protection rules on `main` (enforced strict PR check on "Lint & Safety Checks", disallowing force pushes and branch deletions). Resolved upstream Ansible collection requirement on CI runner. Verified base CI workflow execution (`✓ passed`).
 **Why this approach:** Hosting the git root at the repository root guarantees that GitHub Actions workflows trigger correctly from `.github/workflows/` and establishes the required PR gate before Phase 1.
