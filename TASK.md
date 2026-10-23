@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.2 Helm chart `charts/app`)**
+**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.3 Isolation objects)**
 
 ---
 
@@ -79,7 +79,7 @@
 - [x] **T-3.1** 🤖 **Demo app** — FastAPI per SPEC §6.6, pytest, multi-stage non-root Dockerfile.
   - *Acceptance:* `make test` green; local `docker build` + run returns the expected JSON; runs as non-root.
 
-- [ ] **T-3.2** 🤖 **Helm chart `charts/app`** (depends T-3.1)
+- [x] **T-3.2** 🤖 **Helm chart `charts/app`** (depends T-3.1)
   - Deployment, Service, Ingress (class + hostname from values), ephemeral Postgres, ServiceAccount, probes, securityContext, resources.
   - *Acceptance:* `helm lint` + `helm template | kubeconform` clean; sensible `values.yaml`; Ingress hostname is set at creation (not patched later).
 

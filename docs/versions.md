@@ -34,6 +34,7 @@
 | **Yamllint** | `1.38.0` | https://pypi.org/project/yamllint/1.38.0/ | Manifest formatting linter |
 | **ShellCheck** | `0.10.0` | https://github.com/koalaman/shellcheck/releases/tag/v0.10.0 | Shell script linter |
 | **Gitleaks** | `8.27.2` | https://github.com/gitleaks/gitleaks/releases/tag/v8.27.2 | Secret scanner |
+| **kubeconform** | `v0.6.7` | https://github.com/yannh/kubeconform/releases/tag/v0.6.7 | Kubernetes manifest validator |
 
 ---
 

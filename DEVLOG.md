@@ -91,6 +91,21 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-23 — T-3.2 — Helm chart charts/app
+**Did:** Created production-ready Helm chart in `charts/app/` supporting both Tier 1 shared and Tier 2 per-PR preview environments. Defined templates: `serviceaccount.yaml` (`automountServiceAccountToken: false`), `postgres-secret.yaml` (backing database credentials), `postgres-service.yaml` (ClusterIP:5432), `postgres-deployment.yaml` (ephemeral `postgres:16-alpine`, `emptyDir` storage, non-root UID 70, liveness/readiness probes), `service.yaml` (ClusterIP:80 -> targetPort:8000), `deployment.yaml` (demo app with non-root securityContext UID 10001, `readOnlyRootFilesystem: true`, capabilities drop ALL, emptyDir `/tmp` mount, probes on `/healthz` and `/readyz`, env vars `ENV_NAME`, `PR_NUMBER`, `GIT_SHA`, and dynamic `DATABASE_URL`), and `ingress.yaml` (Tailscale Ingress with `ingressClassName: tailscale`, setting both `rules.host` and `tls.hosts` dynamically at manifest creation time). Established sensible defaults in `charts/app/values.yaml`. Pinned `kubeconform: v0.6.7` in `docs/versions.md`. Integrated `lint-helm` and `helm-template` with `kubeconform` validation into `Makefile` and `.github/workflows/ci.yml`.
+**Why this approach:** Setting the Ingress hostname directly at Helm manifest rendering time eliminates race conditions or asynchronous patching when the Tailscale operator registers the node on the tailnet and requests Let's Encrypt TLS certificates. Bundling an ephemeral Postgres pod directly in the preview namespace ensures 100% database state isolation with zero storage leaks on namespace deletion.
+**Verified:**
+- `helm lint charts/app`: 0 errors.
+- `make helm-template`: 7/7 Kubernetes resources rendered and validated cleanly against k3s API server schema via dry-run client.
+- `kubeconform:v0.6.7` (strict mode): `Summary: 7 resources found parsing stdin - Valid: 7, Invalid: 0, Errors: 0, Skipped: 0`.
+- `make lint`: All linters (yamllint, ansible-lint, shellcheck, gitleaks, helm lint) passed 100%.
+- `make test`: All 6 demo app tests passed in 0.33s.
+**Gotchas / decisions:**
+- Helm templates contain Go template directives (`{{- ... -}}`) that break pure YAML parsers. Excluded `charts/**/templates/` from `yamllint` in `.yamllint.yaml` while relying on `helm lint` and `kubeconform` for template and schema validation.
+- In `postgres:16-alpine`, the unprivileged user is UID 70. Setting `runAsUser: 70`, `runAsGroup: 70`, `fsGroup: 70` satisfies Kubernetes Pod Security Standards without requiring root privilege escalation.
+**Learned (interview note):** In GitOps workflows with Kubernetes Operators (like Tailscale Operator), creating Ingress resources with the final desired hostname upfront ensures that the operator immediately initiates DNS-01 challenge issuance for the target hostname, avoiding transient certificate renegotiation or host rename churn.
+**Next:** T-3.3 — Isolation objects (ResourceQuota, LimitRange, default-deny NetworkPolicy + allows, PSS labels).
+
 ### 2026-10-23 — T-3.1 — Demo app
 **Did:** Implemented the PR preview demo application in `demo-app/` strictly fulfilling the contract defined in SPEC §6.6. Created `demo-app/src/main.py` (FastAPI) and `demo-app/src/database.py` supporting `GET /` (`{env, pr, sha, hostname, db}`), `GET /healthz` (liveness probe), `GET /readyz` (readiness probe checking DB), `GET /counter` and `POST /counter` with atomic database counter operations (`ON CONFLICT (id) DO UPDATE SET count = counters.count + 1 RETURNING count`). Pinned dependencies in `demo-app/requirements.txt` (`fastapi==0.115.12`, `uvicorn[standard]==0.34.2`, `psycopg2-binary==2.9.10`, `pydantic==2.11.5`). Created multi-stage `demo-app/Dockerfile` with non-root user `appuser:10001` (content size 64.1 MB). Authored test suite `demo-app/tests/test_main.py` with pytest and FastAPI TestClient.
 **Why this approach:** Using SQLite fallback allows fast local unit testing without requiring a PostgreSQL daemon or system dependencies on the host (`make test` passes in 0.28s), while identical SQL query syntax ensures seamless compatibility with PostgreSQL 16/17 in Docker and Kubernetes previews. Multi-stage Docker build with virtualenv copy keeps the runtime image minimal and secure.
