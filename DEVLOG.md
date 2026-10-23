@@ -41,6 +41,7 @@
 | Tagged resources đang dùng (Tailscale free plan cap = 50) | < 50 | **5–6 nodes** | 2026-10-23 | Tailscale admin console / status during 5-ingress test (T-2.0) |
 | Phút ephemeral đã dùng/tháng (free plan cap = 1 000 min) | < 1 000 | **0 min** (proxies are stateful tagged nodes) | 2026-10-23 | Tailscale admin console (T-2.0) |
 | Số preview đồng thời tối đa trên VM (fit RAM/CPU) | ≥ 5 | **≥ 10** (mỗi proxy pod chỉ tốn ~16.5 MiB) | 2026-10-23 | Extrapolated from 5-ingress spike memory footprint (T-2.0) |
+| Tier 1: Git merge → new image visible at shared URL | ≤ 3 min | **66 s** | 2026-10-23 | Stopwatch from GitHub PR merge (#18) to `curl https://shared.taildc1471.ts.net/` returning new SHA `a55dfe6` (T-3.5) |
 
 ## Gotchas (lasting lessons — symptom → cause → fix)
 
@@ -58,6 +59,11 @@
    - *Symptom:* Machine cannot resolve `*.ts.net` domain of the cluster proxy even with valid TLS cert.
    - *Cause:* Tailscale MagicDNS only resolves names within the local tailnet. If the client machine is logged into a different tailnet profile, it will receive NXDOMAIN.
    - *Fix:* Ensure client device runs `sudo tailscale login` or `tailscale switch` into the target tailnet or invite reviewer accounts via Tailscale user sharing.
+
+4. **GitHub Packages Actions access permission:**
+   - *Symptom:* Workflow job fails at `docker push` with `denied: permission_denied: write_package` even when workflow specifies `permissions: packages: write`.
+   - *Cause:* When a container package is first pushed or created under a personal user account, GitHub Packages does not automatically grant Write permissions to repository `GITHUB_TOKEN`.
+   - *Fix:* In Package Settings (`https://github.com/users/<user>/packages/container/package/<package>/settings`), scroll to **Manage Actions access**, add the repository with role **Write** (or **Admin**). Additionally, set repository Workflow permissions to Read and Write (`PUT /repos/<owner>/<repo>/actions/permissions/workflow`).
 
 ## Open questions / blockers
 
@@ -90,6 +96,35 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-23 — T-3.5 — Tier 1 — shared environment
+**Did:** Fully implemented and validated the Tier 1 shared environment lifecycle, automated container build pipeline, and GitOps synchronization:
+- Configured `.github/workflows/build.yml` triggered on push to `main` with changes under `demo-app/**`: builds container, runs Trivy vulnerability scan (`exit-code: 1` on CRITICAL/HIGH), authenticates to GHCR, and pushes tags `<short_sha>` and `latest`.
+- Zero-CVE container hardening:
+  - Upgraded `fastapi` to `0.161.1` (incorporating `starlette 1.7.0`) to resolve 3 HIGH CVEs (CVE-2025-62727, CVE-2026-48818, CVE-2026-54283).
+  - Hardened `demo-app/Dockerfile`: uninstalled build tooling (`pip`, `setuptools`, `wheel`) from `/opt/venv` and stripped `/usr/local/lib/python3.10/site-packages/{setuptools,wheel,pip}*` from the minimal runtime image.
+  - Reduced container vulnerability count from 11 to **0 (Clean)** on Trivy 0.60.0.
+  - Added OCI image labels (`org.opencontainers.image.source` and description).
+- Fixed database startup race condition in `demo-app/src/database.py`: ensured `init_db()` is invoked resiliently on counter access so that PostgreSQL restarts or initial probe delays never leave missing schemas.
+- Deployed Argo CD Application `shared-main` (`platform/argocd/application-shared.yaml`) tracking branch `main`, chart `charts/app/`, and `values-shared.yaml` into namespace `shared` within AppProject `previews`.
+- Executed stopwatch measurement for GitOps synchronization:
+  - Updated `image.tag` to `a55dfe6` in `charts/app/values-shared.yaml` via PR #18.
+  - Measured time from PR squash-merge on `main` until `https://shared.taildc1471.ts.net/` reflected the new SHA: **66 seconds**!
+  - Verified counter atomic operations on the live shared environment: `POST /counter` returned 1, second `POST` returned 2.
+**Why this approach:** Pull-based GitOps decouples the CI build runner from the production/staging cluster: GitHub Actions builds, tests, and publishes artifacts without requiring cluster kubeconfig credentials or inbound networking ports. Argo CD running in-cluster reconciles declarative Git state and performs zero-downtime rolling deployments.
+**Verified:**
+- `build.yml` GitHub Actions workflow executed successfully on `main` (Run ID: `39973459167`), scanned image with Trivy (0 findings), and published `ghcr.io/dungx2409/demo-app:a55dfe6` and `latest`.
+- `application.argoproj.io/shared-main`: `Synced`, `Healthy`.
+- Live Tailscale HTTPS endpoint: `curl -s -i https://shared.taildc1471.ts.net/` returned HTTP/2 200 with `{"env":"shared","pr":"local","sha":"a55dfe6","hostname":"shared-main-app-7b8567b8f4-gvzt2","db":"ok"}`.
+- Live `/healthz` and `/readyz`: both HTTP/2 200 `{"status":"ok"}` and `{"status":"ready","db":"ok"}`.
+- Live `/counter`: atomic increment 0 -> 1 -> 2.
+- Time from merge to visible: **66 seconds** (Target: ≤ 3 min).
+- All linters and test suites clean (`make lint`, `make test`, `make helm-template`).
+**Gotchas / decisions:**
+- Personal container packages on GHCR require granting repository Actions Write permission under Package Settings -> Manage Actions access, and setting repo Workflow permissions to Write (`PUT /repos/<owner>/<repo>/actions/permissions/workflow`).
+**Learned (interview note):** I can explain Tier 1 vs Tier 2 architecture: Tier 1 is a persistent shared staging environment that tracks the trunk branch (`main`), giving teammates a stable URL (`https://shared.<tailnet>.ts.net`) updated via GitOps commit-by-commit; Tier 2 provides ephemeral per-PR isolated namespaces dynamically managed by Argo CD ApplicationSets and reaped on PR closure.
+**Next:** Phase 4: T-4.1 — `ci.yml` full (status checks, multi-linter pipeline, Trivy config+fs, and gitleaks gate).
+
 
 ### 2026-10-23 — T-3.4 — Manual deploy to pr-0
 **Did:** Executed end-to-end manual deployment of the full PR preview stack into namespace `pr-0` to validate runtime readiness before GitOps automation:

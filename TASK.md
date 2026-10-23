@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 3 — Demo app, chart, Tier 1 shared environment (T-3.5 Tier 1 — shared environment)**
+**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.1 full ci.yml)**
 
 ---
 
@@ -90,7 +90,7 @@
   - Push image to GHCR (package public, 👤); `helm install` into `pr-0` (🟡).
   - *Acceptance:* a tailnet member opens `https://pr-0.<tailnet>.ts.net`; DB counter works; from the pod, other namespaces and any metadata address are unreachable; then uninstall and delete `pr-0` with no leftovers (incl. proxy/device).
 
-- [~] **T-3.5** 🤝 **Tier 1 — shared environment** (depends T-3.4, T-2.4)
+- [x] **T-3.5** 🤝 **Tier 1 — shared environment** (depends T-3.4, T-2.4)
   - `build.yml` on push to `main`: build → Trivy → push GHCR tag = commit SHA. Argo CD `Application shared-main` (namespace `shared`) tracks `main` and the image tag in `values.yml`.
   - *Acceptance:* change the tag in `values.yml` → Argo CD syncs → `https://shared.<tailnet>.ts.net` shows the new `sha`; a teammate (second member) confirms; time from merge to visible recorded.
 
