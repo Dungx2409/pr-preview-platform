@@ -118,6 +118,8 @@ def get_counter() -> int:
     if not db_url:
         raise ConnectionError("No database configured")
 
+    init_db()
+
     if db_url.startswith("sqlite://"):
         conn = _get_connection()
         with conn:
@@ -140,6 +142,8 @@ def increment_counter() -> int:
     db_url = get_db_url()
     if not db_url:
         raise ConnectionError("No database configured")
+
+    init_db()
 
     query = (
         "INSERT INTO counters (id, count) VALUES (1, 1) "
