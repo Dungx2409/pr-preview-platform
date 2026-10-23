@@ -90,6 +90,22 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-23 — T-2.1 — Tailscale Operator install (managed by the repo)
+**Did:** Created production-ready Helm values configuration in `platform/tailscale/values.yaml` (pinned chart `1.104.2`, `tag:k8s-operator`, `tag:k8s`, API server proxy disabled per D8, resource requests/limits set). Implemented idempotent cluster bootstrap script `platform/bootstrap/install-tailscale.sh` with validation for `kubectl`, `helm`, `KUBECONFIG`, out-of-band OAuth secret existence, repository update, Helm release install, and rollout status checking. Documented SOP in `docs/runbook.md`. Verified installation by executing bootstrap script into namespace `tailscale`, deploying a temporary test Ingress `test-managed` in `default` namespace, curling `https://test-managed.taildc1471.ts.net` with valid Let's Encrypt TLS (HTTP/2 200), and cleanly removing test resources.
+**Why this approach:** Managing the operator installation declaratively through committed Helm values and an idempotent bootstrap script ensures that any engineer or automation pipeline can reliably reproduce the private ingress platform without manual UI configuration or embedding secrets in version control.
+**Verified:**
+- `platform/bootstrap/install-tailscale.sh` ran clean and reported `deployment "operator" successfully rolled out`.
+- Pod `operator-6898785c96-ftf4n` in namespace `tailscale` is 1/1 Running.
+- Test Ingress `test-managed` exposed via proxy pod `ts-test-managed-wrt2b-0` in `tailscale` namespace.
+- Let's Encrypt ACME DNS-01 certificate issued cleanly (`health(warnable=tls-cert-pending): ok`).
+- `curl -s -I https://test-managed.taildc1471.ts.net` returned `HTTP/2 200` with user identity header `Tailscale-User-Login: dungpro2409@gmail.com`.
+- Deleting test Ingress immediately cleaned up proxy pod and revoked tailnet device.
+- `make lint` passed 100% (yamllint, ansible-lint, shellcheck, gitleaks).
+**Gotchas / decisions:**
+- In the production setup, proxy pods managed by the operator are colocated in the operator's installation namespace (`tailscale`) regardless of which workload namespace owns the Ingress resource, keeping application namespaces free of proxy pods.
+**Learned (interview note):** In Kubernetes GitOps workflows, platform infrastructure components like Ingress Operators should be managed via version-controlled Helm values while secrets remain strictly out-of-band. Automated rollout verification guards downstream application deployments from starting before the network mesh is fully operational.
+**Next:** T-2.2 — Access-model verification (verify access allowed for `group:reviewers` and denied for non-reviewers/non-members, write `docs/security.md`).
+
 ### 2026-10-23 — T-2.0 — Tailscale private-Ingress spike (go/no-go)
 **Did:** Executed full feasibility spike for Tailscale Kubernetes Operator (`v1.104.2`) on k3s single-node cluster. Created `platform/tailscale/policy-snippets.json` (ACL draft with `tagOwners` and `group:reviewers`). Assisted owner in configuring Tailscale OAuth credentials out-of-band. Deployed operator and sample `whoami` workload in `spike-ts` namespace with `ingressClassName: tailscale`. Measured resource scaling across 1, 3, and 5 concurrent Ingresses. Verified ACME DNS-01 TLS certificate provisioning delay, subsequent request latency, dynamic Ingress hostname renaming, deletion cleanup (node auto-revocation without zombie devices), and recreation behavior. Evaluated preview status notification options A/B/C. Compiled ≤ 1-page comparison report in `docs/decisions.md` with explicit GO verdict. Cleaned up spike namespace.
 **Why this approach:** The Tailscale Kubernetes Operator enables native, zero-config, private HTTPS previews with real Let's Encrypt certificates per PR without exposing public DNS, opening firewall ports, or maintaining custom reverse-proxy routers.

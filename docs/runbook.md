@@ -144,3 +144,37 @@ VBoxManage controlvm "devops-server" acpipowerbutton
 VBoxManage snapshot "devops-server" take "base vm" --description "Base OS, static IP 192.168.56.10, SSH key ready"
 ```
 The VM is now ready for Ansible automation (Phase 1, T-1.5).
+
+---
+
+## 5. Platform Bootstrap & Ingress (Phase 2)
+
+### Install Managed Tailscale Operator
+The Tailscale Kubernetes Operator is managed via Helm chart `tailscale/tailscale-operator` (`1.104.2`) under namespace `tailscale`.
+
+1. Create the `operator-oauth` secret out-of-band:
+```bash
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl create namespace tailscale
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl create secret generic operator-oauth \
+  --namespace=tailscale \
+  --from-literal=client_id="<CLIENT_ID>" \
+  --from-literal=client_secret="<CLIENT_SECRET>"
+```
+
+2. Execute the bootstrap script:
+```bash
+platform/bootstrap/install-tailscale.sh
+```
+
+3. Verify operator rollout and status:
+```bash
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl get pods -n tailscale
+```
+
+### Manual Finalizer Cleanup (Disaster Recovery Gotcha)
+If an Ingress or namespace becomes stuck in `Terminating` because the operator was uninstalled first:
+```bash
+KUBECONFIG=~/.kube/pr-preview.yaml kubectl patch ingress <ingress-name> -n <namespace> \
+  --type=json -p='[{"op": "remove", "path": "/metadata/finalizers"}]'
+```
+
