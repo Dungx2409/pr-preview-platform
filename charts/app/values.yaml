@@ -122,3 +122,49 @@ postgres:
     requests:
       cpu: 50m
       memory: 64Mi
+
+# Optional Namespace creation with Pod Security Standards labels
+namespace:
+  create: false
+  name: ""
+  podSecurity:
+    enforce: baseline
+    enforceVersion: latest
+    warn: restricted
+    warnVersion: latest
+    audit: restricted
+    auditVersion: latest
+
+# ResourceQuota enforcement
+resourceQuota:
+  enabled: true
+  hard:
+    requestsCpu: "600m"
+    requestsMemory: "512Mi"
+    limitsCpu: "1500m"
+    limitsMemory: "1Gi"
+    pods: "10"
+    persistentvolumeclaims: "2"
+
+# LimitRange defaults and bounds
+limitRange:
+  enabled: true
+  defaultLimit:
+    cpu: "300m"
+    memory: "256Mi"
+  defaultRequest:
+    cpu: "50m"
+    memory: "64Mi"
+  max:
+    cpu: "1000m"
+    memory: "512Mi"
+  min:
+    cpu: "10m"
+    memory: "16Mi"
+
+# NetworkPolicy zero-trust isolation
+networkPolicy:
+  enabled: true
+  tailscaleNamespace: tailscale
+  allowExternalEgress: false
+

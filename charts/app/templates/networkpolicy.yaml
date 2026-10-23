@@ -1,0 +1,100 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "app.fullname" . }}-default-deny
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: isolation
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "app.fullname" . }}-allow-app
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: isolation
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "app.name" . }}
+      app.kubernetes.io/component: app
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress from Tailscale operator proxy pods
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.tailscaleNamespace | default "tailscale" }}
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Allow ingress from within the same preview namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow connection to PostgreSQL database in the same namespace
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: database
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- if .Values.networkPolicy.allowExternalEgress }}
+    # Allow external internet egress excluding private networks and cloud metadata IP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8          # Pod & Service CIDRs (10.42.0.0/16, 10.43.0.0/16)
+              - 172.16.0.0/12       # Private container networks
+              - 192.168.0.0/16      # Host-only & local LAN subnets (192.168.56.0/24)
+              - 169.254.169.254/32  # Cloud provider metadata IP (GCP / AWS)
+              - 100.64.0.0/10       # Carrier Grade NAT (Tailscale CGNAT)
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "app.fullname" . }}-allow-postgres
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: isolation
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: database
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow PostgreSQL connections ONLY from the app pods in the same namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "app.name" . }}
+              app.kubernetes.io/component: app
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress: []
+{{- end }}

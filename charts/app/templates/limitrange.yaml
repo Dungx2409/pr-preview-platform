@@ -1,0 +1,24 @@
+{{- if .Values.limitRange.enabled -}}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "app.fullname" . }}-limits
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: isolation
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: {{ .Values.limitRange.defaultLimit.cpu | quote }}
+        memory: {{ .Values.limitRange.defaultLimit.memory | quote }}
+      defaultRequest:
+        cpu: {{ .Values.limitRange.defaultRequest.cpu | quote }}
+        memory: {{ .Values.limitRange.defaultRequest.memory | quote }}
+      max:
+        cpu: {{ .Values.limitRange.max.cpu | quote }}
+        memory: {{ .Values.limitRange.max.memory | quote }}
+      min:
+        cpu: {{ .Values.limitRange.min.cpu | quote }}
+        memory: {{ .Values.limitRange.min.memory | quote }}
+{{- end }}
