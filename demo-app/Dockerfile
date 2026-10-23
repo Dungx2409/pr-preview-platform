@@ -7,11 +7,17 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip uninstall -y pip setuptools wheel
 
 # Stage 2: Minimal runtime image
 FROM python:3.10-slim AS runtime
+
+# Remove unnecessary build/package tooling bundled in base python image to eliminate CVE attack surface
+RUN rm -rf /usr/local/lib/python3.10/site-packages/setuptools* \
+           /usr/local/lib/python3.10/site-packages/wheel* \
+           /usr/local/lib/python3.10/site-packages/pip*
 
 # Create dedicated non-root user and group
 # appuser: UID 10001, GID 10001
