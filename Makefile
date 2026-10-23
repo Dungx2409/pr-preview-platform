@@ -25,6 +25,9 @@ lint-yaml: ## Lint YAML files
 .PHONY: lint-ansible
 lint-ansible: ## Lint Ansible playbooks and roles
 	@echo -e "$(CYAN)→ Running ansible-lint...$(RESET)"
+	@if [ -f "ansible/requirements.yml" ]; then \
+		ansible-galaxy collection install -r ansible/requirements.yml >/dev/null 2>&1 || true; \
+	fi
 	ansible-lint ansible/
 
 .PHONY: lint-shell

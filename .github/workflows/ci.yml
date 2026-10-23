@@ -38,6 +38,7 @@ jobs:
           python3 -m pip install --upgrade pip
           pip install yamllint==1.38.0 ansible-lint==26.10.1
           sudo apt-get update && sudo apt-get install -y shellcheck
+          ansible-galaxy collection install -r ansible/requirements.yml
 
       - name: Install gitleaks
         run: |
