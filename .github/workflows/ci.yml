@@ -47,6 +47,10 @@ jobs:
           curl -sSL "$URL" | tar -xz -C /usr/local/bin gitleaks
           chmod +x /usr/local/bin/gitleaks
 
+      - name: Install test dependencies
+        run: |
+          pip install -r demo-app/requirements.txt -r demo-app/requirements-dev.txt
+
       - name: Run make lint
         run: make lint
 
