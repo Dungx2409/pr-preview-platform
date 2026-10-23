@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+tests/
+requirements-dev.txt
+.venv/
+venv/
+.git/
+.gitignore
+*.swp
+*.swo
