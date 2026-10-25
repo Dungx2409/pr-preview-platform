@@ -1,0 +1,60 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: previews
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: pr-preview-platform
+    app.kubernetes.io/component: applicationset
+spec:
+  generators:
+    - pullRequest:
+        github:
+          owner: Dungx2409
+          repo: pr-preview-platform
+          labels:
+            - preview
+          tokenRef:
+            secretName: github-token
+            key: token
+        requeueAfterSeconds: 30
+  template:
+    metadata:
+      name: 'preview-pr-{{number}}'
+      labels:
+        app.kubernetes.io/part-of: pr-preview-platform
+        app.kubernetes.io/instance: 'preview-pr-{{number}}'
+        preview: "true"
+        pr: '{{number}}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: previews
+      source:
+        repoURL: https://github.com/Dungx2409/pr-preview-platform.git
+        targetRevision: '{{head_sha}}'
+        path: charts/app
+        helm:
+          valuesObject:
+            env: 'pr-{{number}}'
+            pr:
+              number: '{{number}}'
+            gitSha: '{{head_sha}}'
+            image:
+              tag: 'pr-{{number}}-{{head_short_sha}}'
+            ingress:
+              className: tailscale
+              hostname: 'pr-{{number}}'
+            namespace:
+              create: true
+              name: 'pr-{{number}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'pr-{{number}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
