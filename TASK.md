@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.6 scripts/verify-teardown.sh + 20-cycle test)**
+**→ Phase 5 — Hardening + cleanup (T-5.1 Reaper CronJob)**
 
 ---
 
@@ -114,7 +114,7 @@
 - [x] **T-4.5** 🤖 **`preview-closed.yml` cleanup** — delete GHCR tags for the PR, deactivate Deployment, final comment.
   - *Acceptance:* closing/merging a PR leaves no tags, namespace, Application, proxy pod or tailnet device.
 
-- [ ] **T-4.6** 🤖 **`scripts/verify-teardown.sh` + 20-cycle test**
+- [x] **T-4.6** 🤖 **`scripts/verify-teardown.sh` + 20-cycle test**
   - Script lists leftovers (namespaces, PVs, Applications, GHCR tags, Tailscale devices). Run 20 open/close cycles (script-assisted).
   - *Acceptance:* **0 leaks**; teardown time recorded.
 

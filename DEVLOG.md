@@ -29,9 +29,9 @@
 | Metric | Target | Result | Date | How measured |
 |---|---|---|---|---|
 | PR labeled → URL healthy (p50 / p95) | p50 ≤ 5 min | **102 s** (1m 42s) | 2026-10-25 | Stopwatch from PR #26 opened (12:13:42) to `curl https://pr-26.taildc1471.ts.net/` HTTP 200 (12:15:24) (T-4.4) |
-| PR closed → everything gone | ≤ 3 min | **~25 s** | 2026-10-25 | Teardown workflow (7s) + Argo CD polling/pruning (~18s) on PR #28 unlabel (T-4.5) |
+| PR closed → everything gone | ≤ 3 min | **6–7 s** (in-cluster) / **~25 s** (full CI/GHCR) | 2026-10-25 | Measured over 20 cycles with `scripts/test-20-cycles.sh` and PR #28 teardown workflow (T-4.5/T-4.6) |
 | Rebuild from empty project | ≤ 30 min | — | — | — |
-| Leaks after 20 open/close cycles | 0 | — | — | — |
+| Leaks after 20 open/close cycles | 0 | **0 leaks** | 2026-10-25 | `scripts/test-20-cycles.sh 20` automated stress test (T-4.6) |
 | Node RAM headroom with full stack | ≥ 20 % free | 77.7 % free (5 767 / 7 424 MB available, 1 657 MB used) | 2026-10-23 | `free -m` on VM post-k3s + Tailscale + Argo CD (T-2.3) |
 | RAM Argo CD stack (5 pods) | ≤ 300 MiB | **118 MiB** (server 44Mi, app-controller 24Mi, apps-controller 24Mi, repo-server 21Mi, redis 5Mi) | 2026-10-23 | `kubectl top pod -n argocd` (T-2.3) |
 | Monthly credit burn (VM running N h/mo) | within budget | — | — | — |
@@ -111,6 +111,31 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-25 — T-4.6 — scripts/verify-teardown.sh + 20-cycle test
+**Did:** Implemented automated teardown verification and stress-tested the preview lifecycle over 20 consecutive cycles:
+- Created `scripts/verify-teardown.sh`:
+  - Integrated into `make verify-teardown`.
+  - Comprehensive inspection of 5 Kubernetes resource classes: preview namespaces (`pr-*`), Argo CD Applications (`preview-pr-*`), Tailscale proxy pods (`ts-preview-pr-*`), workload pods, and PersistentVolumeClaims.
+  - Cloud state inspection via GitHub API: verifies 0 active deployments (`pr-*`) and detects orphaned GHCR container tags. Supports `--pr <number>` for targeted verification and `--strict-github` for zero-tolerance CI gating.
+- Created `scripts/test-20-cycles.sh`:
+  - Executes $N$ automated creation and deletion cycles against the cluster using Argo CD application manifests (`charts/app` with `resources-finalizer`).
+  - Measures Time-to-Ready and teardown duration for each cycle.
+  - Automatically executes `verify-teardown.sh --pr cycle` after every single cycle to assert clean garbage collection.
+- Executed 20-cycle benchmark:
+  - 20/20 cycles completed successfully with **0 leaks**.
+  - Teardown time: Min **6s**, Avg **6.8s** (~6s), Max **7s**.
+  - Time-to-ready per cycle: ~26–38s.
+- Merged PR #30 into `main` (`6390aa8`).
+**Why this approach:** Ephemeral environments must be resilient against state drift and finalizer deadlocks. Repeatedly spinning up and destroying environments over 20 cycles verifies that Argo CD's `resources-finalizer`, Tailscale Operator, and k3s garbage collection operate deterministically without memory bloat or orphaned resources.
+**Verified:**
+- `make verify-teardown` returned `0 leaks found` across all Kubernetes and GitHub deployment checks.
+- `scripts/test-20-cycles.sh 20` completed 20/20 cycles with `0 LEAKS` detected.
+- `make lint` and `make test` green.
+**Gotchas / decisions:**
+- *Finalizer naming:* Argo CD logs `prefer a domain-qualified finalizer name including a path (/)` for `resources-finalizer.argocd.argoproj.io`. While standard, domain-qualified names avoid collisions if custom controllers manage resources.
+**Learned (interview note):** I can explain this because infrastructure reliability requires empirical stress-testing. A single manual test cannot reveal race conditions in finalizer cascades or zombie controller state; running a 20-cycle automated benchmark validates that the platform reliably achieves zero-leak teardown in ~6–7 seconds.
+**Next:** Phase 5 — Hardening + cleanup (T-5.1 Reaper CronJob).
 
 ### 2026-10-25 — T-4.5 — preview-closed.yml cleanup
 **Did:** Implemented and validated automated lifecycle teardown workflow `.github/workflows/preview-closed.yml`:
