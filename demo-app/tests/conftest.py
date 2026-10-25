@@ -1,8 +1,7 @@
 """Pytest configuration and fixtures for demo app tests."""
 
-import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Ensure demo-app/src is on sys.path
 SRC_DIR = Path(__file__).resolve().parent.parent / "src"
@@ -10,9 +9,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import pytest
-from fastapi.testclient import TestClient
-
 from database import reset_db_connection
+from fastapi.testclient import TestClient
 from main import app
 
 

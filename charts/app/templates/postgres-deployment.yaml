@@ -80,7 +80,15 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: data
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
           emptyDir: {}
 {{- end }}

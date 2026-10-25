@@ -6,18 +6,16 @@ Enforces atomic operations for per-environment database isolation verification.
 
 import os
 import sqlite3
-import urllib.parse
-from typing import Optional
 
 try:
     import psycopg2
 except ImportError:
     psycopg2 = None
 
-_sqlite_conn: Optional[sqlite3.Connection] = None
+_sqlite_conn: sqlite3.Connection | None = None
 
 
-def get_db_url() -> Optional[str]:
+def get_db_url() -> str | None:
     """Retrieve database connection URL from environment variables."""
     db_url = os.getenv("DATABASE_URL")
     if db_url:
@@ -78,7 +76,8 @@ def init_db() -> bool:
             with _get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "CREATE TABLE IF NOT EXISTS counters (id INT PRIMARY KEY, count INT NOT NULL);"
+                        "CREATE TABLE IF NOT EXISTS counters "
+                        "(id INT PRIMARY KEY, count INT NOT NULL);"
                     )
             return True
 
