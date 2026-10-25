@@ -47,6 +47,7 @@ jobs:
           echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
           echo "TAG_8=pr-${PR_NUMBER}-${SHORT_SHA_8}" >> "$GITHUB_ENV"
           echo "TAG_7=pr-${PR_NUMBER}-${SHORT_SHA_7}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA_7}" >> "$GITHUB_ENV"
           echo "Target Tags: pr-${PR_NUMBER}-${SHORT_SHA_8} and pr-${PR_NUMBER}-${SHORT_SHA_7}"
 
       - name: Build local container image
@@ -86,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PREVIEW_URL="https://pr-${PR_NUMBER}.${{ env.TAILNET_NAME }}"
+          PREVIEW_URL="https://pr-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
           MARKER="<!-- pr-preview-platform-comment -->"
 
           BODY=$(cat <<EOF
@@ -98,7 +99,7 @@ jobs:
           | **Preview URL** | [${PREVIEW_URL}](${PREVIEW_URL}) |
           | **Environment** | \`pr-${PR_NUMBER}\` |
           | **Image Tag** | \`${{ env.TAG_8 }}\` |
-          | **Commit** | \`${{ env.TAG_7 }}\` |
+          | **Commit** | \`${{ env.SHORT_SHA }}\` |
           | **Status** | Pushed to GHCR; live once Argo CD reconciles (~30–60s) |
 
           > 🔒 **Access Note:** Reachable only by authenticated members
@@ -124,24 +125,30 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PREVIEW_URL="https://pr-${PR_NUMBER}.${{ env.TAILNET_NAME }}"
+          PREVIEW_URL="https://pr-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
           ENV_NAME="pr-${PR_NUMBER}"
 
           echo "Creating deployment for environment ${ENV_NAME}..."
-          DEPLOYMENT_ID=$(gh api -X POST "repos/${{ github.repository }}/deployments" \
-            -f ref="${{ github.event.pull_request.head.sha }}" \
-            -f environment="${ENV_NAME}" \
-            -F auto_merge=false \
-            -F required_contexts='[]' \
-            -f description="Preview environment for PR #${PR_NUMBER}" \
-            --jq '.id')
+          DEPLOYMENT_ID=$(gh api -X POST "repos/${{ github.repository }}/deployments" --input - <<EOF | jq -r '.id'
+          {
+            "ref": "${{ github.event.pull_request.head.sha }}",
+            "environment": "${ENV_NAME}",
+            "auto_merge": false,
+            "required_contexts": [],
+            "description": "Preview environment for PR #${PR_NUMBER}"
+          }
+          EOF
+          )
 
           if [ -n "${DEPLOYMENT_ID}" ] && [ "${DEPLOYMENT_ID}" != "null" ]; then
             echo "Setting deployment status to success for deployment ${DEPLOYMENT_ID}..."
-            gh api -X POST "repos/${{ github.repository }}/deployments/${DEPLOYMENT_ID}/statuses" \
-              -f state="success" \
-              -f environment="${ENV_NAME}" \
-              -f environment_url="${PREVIEW_URL}" \
-              -f log_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              -f description="Preview image built and deployed to ${ENV_NAME}"
+            gh api -X POST "repos/${{ github.repository }}/deployments/${DEPLOYMENT_ID}/statuses" --input - <<EOF
+            {
+              "state": "success",
+              "environment": "${ENV_NAME}",
+              "environment_url": "${PREVIEW_URL}",
+              "log_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "description": "Preview image built and deployed to ${ENV_NAME}"
+            }
+            EOF
           fi
