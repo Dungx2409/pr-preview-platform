@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 5 — Hardening + cleanup (T-5.2 Security verification)**
+**→ Phase 5 — Hardening + cleanup (T-5.3 Secrets & access hygiene review)**
 
 ---
 
@@ -125,7 +125,7 @@
 - [x] **T-5.1** 🤖 **Reaper CronJob** (dry-run first) per SPEC §6.9.
   - *Acceptance:* an orphan namespace older than TTL is detected (dry-run), then reaped after the owner enables delete mode; stale Tailscale devices checked.
 
-- [ ] **T-5.2** 🤖 **Security verification** — fork-safety, no CI cluster credentials, 6443/Argo CD UI not exposed, NetworkPolicy, PSS, non-root, ACL group behavior.
+- [x] **T-5.2** 🤖 **Security verification** — fork-safety, no CI cluster credentials, 6443/Argo CD UI not exposed, NetworkPolicy, PSS, non-root, ACL group behavior.
   - *Acceptance:* `docs/security.md` has a table: control → how verified → result.
 
 - [ ] **T-5.3** 🤝 **Secrets & access hygiene review** — history scan with gitleaks; token scopes and Tailscale OAuth scopes re-checked; rotation steps in the runbook and tried once; list of tailnet members/groups reviewed.
