@@ -16,6 +16,11 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  pull-requests: write
+  deployments: write
+
+env:
+  TAILNET_NAME: taildc1471.ts.net
 
 jobs:
   build-preview:
@@ -42,6 +47,7 @@ jobs:
           echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
           echo "TAG_8=pr-${PR_NUMBER}-${SHORT_SHA_8}" >> "$GITHUB_ENV"
           echo "TAG_7=pr-${PR_NUMBER}-${SHORT_SHA_7}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA_7}" >> "$GITHUB_ENV"
           echo "Target Tags: pr-${PR_NUMBER}-${SHORT_SHA_8} and pr-${PR_NUMBER}-${SHORT_SHA_7}"
 
       - name: Build local container image
@@ -75,3 +81,68 @@ jobs:
         run: |
           docker push "${{ env.IMAGE_NAME }}:${{ env.TAG_8 }}"
           docker push "${{ env.IMAGE_NAME }}:${{ env.TAG_7 }}"
+
+      - name: Upsert PR comment with preview link
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PREVIEW_URL="https://pr-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
+          MARKER="<!-- pr-preview-platform-comment -->"
+
+          BODY=$(cat <<EOF
+          ${MARKER}
+          ### 🚀 PR Preview Environment Ready
+
+          | Property | Value |
+          |---|---|
+          | **Preview URL** | [${PREVIEW_URL}](${PREVIEW_URL}) |
+          | **Environment** | \`pr-${PR_NUMBER}\` |
+          | **Image Tag** | \`${{ env.TAG_8 }}\` |
+          | **Commit** | \`${{ env.SHORT_SHA }}\` |
+          | **Status** | Pushed to GHCR; live once Argo CD reconciles (~30–60s) |
+
+          > 🔒 **Access Note:** Reachable only by authenticated members
+          > of the Tailscale tailnet (\`${{ env.TAILNET_NAME }}\`).
+          EOF
+          )
+
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n 1)
+
+          if [ -n "${COMMENT_ID}" ]; then
+            echo "Updating existing comment ${COMMENT_ID} on PR #${PR_NUMBER}..."
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
+              -f body="${BODY}"
+          else
+            echo "Creating new comment on PR #${PR_NUMBER}..."
+            gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              -f body="${BODY}"
+          fi
+
+      - name: Create GitHub Deployment status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PREVIEW_URL="https://pr-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
+          ENV_NAME="pr-${PR_NUMBER}"
+
+          echo "Creating deployment for environment ${ENV_NAME}..."
+          DEPLOY_PAYLOAD=$(printf \
+            '{"ref":"%s","environment":"%s","auto_merge":false,"required_contexts":[],"description":"PR #%s preview"}' \
+            "${{ github.event.pull_request.head.sha }}" \
+            "${ENV_NAME}" \
+            "${PR_NUMBER}")
+
+          DEPLOYMENT_ID=$(echo "${DEPLOY_PAYLOAD}" | \
+            gh api -X POST "repos/${{ github.repository }}/deployments" --input - --jq '.id')
+
+          if [ -n "${DEPLOYMENT_ID}" ] && [ "${DEPLOYMENT_ID}" != "null" ]; then
+            echo "Setting deployment status to success for deployment ${DEPLOYMENT_ID}..."
+            RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            FMT='{"state":"success","environment":"%s","environment_url":"%s","log_url":"%s"}'
+            STATUS_PAYLOAD=$(printf "${FMT}" "${ENV_NAME}" "${PREVIEW_URL}" "${RUN_URL}")
+            echo "${STATUS_PAYLOAD}" | \
+              gh api -X POST "repos/${{ github.repository }}/deployments/${DEPLOYMENT_ID}/statuses" --input -
+          fi
