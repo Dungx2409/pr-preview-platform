@@ -29,7 +29,7 @@
 | Metric | Target | Result | Date | How measured |
 |---|---|---|---|---|
 | PR labeled → URL healthy (p50 / p95) | p50 ≤ 5 min | **102 s** (1m 42s) | 2026-10-25 | Stopwatch from PR #26 opened (12:13:42) to `curl https://pr-26.taildc1471.ts.net/` HTTP 200 (12:15:24) (T-4.4) |
-| PR closed → everything gone | ≤ 3 min | — | — | — |
+| PR closed → everything gone | ≤ 3 min | **~25 s** | 2026-10-25 | Teardown workflow (7s) + Argo CD polling/pruning (~18s) on PR #28 unlabel (T-4.5) |
 | Rebuild from empty project | ≤ 30 min | — | — | — |
 | Leaks after 20 open/close cycles | 0 | — | — | — |
 | Node RAM headroom with full stack | ≥ 20 % free | 77.7 % free (5 767 / 7 424 MB available, 1 657 MB used) | 2026-10-23 | `free -m` on VM post-k3s + Tailscale + Argo CD (T-2.3) |
@@ -111,6 +111,36 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-25 — T-4.5 — preview-closed.yml cleanup
+**Did:** Implemented and validated automated lifecycle teardown workflow `.github/workflows/preview-closed.yml`:
+- Created `.github/workflows/preview-closed.yml`:
+  - Triggered on `pull_request` types `[closed, unlabeled]`.
+  - Filtered by condition: same-repo PR AND (`action == 'unlabeled' && label.name == 'preview'` OR `action == 'closed' && contains(labels, 'preview')`).
+  - Granted permissions: `packages: write`, `pull-requests: write`, `deployments: write`.
+  - Step 1: Queries all deployments for environment `pr-<N>` and creates deployment status `state: "inactive"`.
+  - Step 2: Lists versions of GHCR package `demo-app`, filters versions matching tag `pr-<N>-*`, and deletes them via REST API `DELETE /users/:owner/packages/container/demo-app/versions/:id`.
+  - Step 3: Updates the bot comment matching `<!-- pr-preview-platform-comment -->` with a clean teardown receipt ("🧹 Preview Environment Deactivated", environment, timestamp, and pruning details).
+- End-to-end verification on PR #28:
+  - PR opened with `preview` label -> CI built image, pushed `pr-28-e437c82f`, created deployment, posted comment.
+  - In cluster: ApplicationSet created `preview-pr-28`, pods reached `1/1 Running`, Tailscale proxy provisioned, live endpoint `https://pr-28.taildc1471.ts.net/` verified returning HTTP 200 with `db: "ok"`.
+  - Removed label `preview` -> triggered `preview-closed.yml` (run 40166780877):
+    - Deactivated deployment `7309155728` (`state: "inactive"`).
+    - Purged GHCR package version `1441990422` (0 matching tags remain in GHCR).
+    - Updated PR comment `6393997892` with Deactivated notice.
+  - In cluster: Argo CD ApplicationSet deleted Application `preview-pr-28`, cascaded deletion of namespace `pr-28` (`NotFound`), terminated Tailscale proxy pod, and removed device from tailnet.
+  - Verified total teardown time: **~25s** (7s workflow + ~18s Argo CD prune).
+- Merged PR #28 into `main` (`1462a7c`).
+**Why this approach:** GitOps platforms must avoid cloud resource leaks. By combining Argo CD's `resources-finalizer` (for cluster objects) with a GitHub Actions teardown workflow (for GHCR packages and deployment statuses), both in-cluster and out-of-cluster resources are 100% purged automatically on PR closure or unlabeling.
+**Verified:**
+- `gh run view 40166780877` completed all cleanup steps in 7s.
+- `gh api users/Dungx2409/packages/container/demo-app/versions` confirmed 0 tags matching `pr-28-*`.
+- `gh api repos/Dungx2409/pr-preview-platform/deployments/.../statuses` confirmed `state: "inactive"`.
+- `kubectl get ns pr-28` returned `NotFound`; `curl https://pr-28.taildc1471.ts.net/` failed (NXDOMAIN / refused).
+**Gotchas / decisions:**
+- *Package deletion API scopes:* `GITHUB_TOKEN` with `packages: write` inside a workflow can delete package versions via `DELETE /users/:owner/packages/container/:package/versions/:id`, whereas local developer PATs require explicit `delete:packages` and `read:packages` scopes.
+**Learned (interview note):** I can explain this because ephemeral preview environments require a complete two-sided teardown: server-side (cluster namespaces, pods, and ingress proxies handled by GitOps finalizers) and client-side (container image registries and deployment environments handled by CI teardown webhooks). Leaving either side unhandled leads to resource accumulation and security exposure.
+**Next:** T-4.6 — `scripts/verify-teardown.sh` + 20-cycle test.
 
 ### 2026-10-25 — T-4.4 — PR comment + Deployment status
 **Did:** Implemented Option C (SPEC §6.7) in `.github/workflows/preview.yml` to publish preview URLs directly to GitHub PRs:
