@@ -65,6 +65,11 @@
    - *Cause:* When a container package is first pushed or created under a personal user account, GitHub Packages does not automatically grant Write permissions to repository `GITHUB_TOKEN`.
    - *Fix:* In Package Settings (`https://github.com/users/<user>/packages/container/package/<package>/settings`), scroll to **Manage Actions access**, add the repository with role **Write** (or **Admin**). Additionally, set repository Workflow permissions to Read and Write (`PUT /repos/<owner>/<repo>/actions/permissions/workflow`).
 
+5. **PostgreSQL readOnlyRootFilesystem requires emptyDirs for runtime sockets and temp:**
+   - *Symptom:* Setting `readOnlyRootFilesystem: true` on Postgres container causes failure creating `/var/run/postgresql` socket or writing temp files in `/tmp`.
+   - *Cause:* By default Postgres writes its unix domain socket in `/var/run/postgresql` and temp files in `/tmp`.
+   - *Fix:* Mount `emptyDir` volumes at `/var/run/postgresql` and `/tmp` in addition to `/var/lib/postgresql/data`.
+
 ## Open questions / blockers
 
 | # | Question | Owner | Status |
@@ -96,6 +101,29 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-25 — T-4.1 — `ci.yml` full
+**Did:** Implemented comprehensive multi-linter, security scanning, and unit testing pipeline in `.github/workflows/ci.yml`:
+- Configured Python 3.10 linting and formatting using **Ruff 0.11.11** via `pyproject.toml` (`target-version = "py310"`, `line-length = 100`, `select = ["E", "W", "F", "I", "UP", "B"]`). Cleaned all Python code in `demo-app/` to achieve 0 Ruff warnings/errors.
+- Integrated **Trivy 0.76.1** in CI and `Makefile` (`make lint-trivy`) to perform automated filesystem vulnerability scanning and Kubernetes/Helm configuration scanning with severity gates on `CRITICAL,HIGH`.
+- Hardened Helm chart `charts/app/templates/postgres-deployment.yaml` and `values.yaml` with `readOnlyRootFilesystem: true` and emptyDirs for `/var/run/postgresql` and `/tmp`, eliminating Trivy finding `AVD-KSV-0014`.
+- Updated `ci.yml` job `Lint & Safety Checks` (matching GitHub repository branch protection required status check) to execute:
+  - `make lint`: Yamllint, Ansible-lint, ShellCheck, Ruff check & format, Gitleaks secret detection, Helm lint, Trivy fs & config.
+  - `make helm-template`: Helm template rendering and Kubeconform schema validation.
+  - `make test`: Pytest unit tests for demo app endpoints and contract.
+- Recorded Ruff `0.11.11` in `docs/versions.md` and `demo-app/requirements-dev.txt`.
+- Pushed PR #20 and validated branch protection rejection gate by introducing a deliberate test failure (`af5da27`): CI immediately caught the error (`make lint` failed with Ruff rule `B011` / exit code 2), blocking merge on PR #20.
+- Reverted the intentional failure (`d65a4c6`): CI pipeline ran all checks completely green in 2m35s. Squashed and merged PR #20 into `main`.
+**Why this approach:** Enforcing automated quality gates and security scans on every pull request prevents supply chain vulnerabilities, configuration drift, and secret leaks from entering `main`. Running identical targets in local `Makefile` and CI runner ensures developer reproducibility.
+**Verified:**
+- `make lint`, `make helm-template`, `make test` executed cleanly locally and on GitHub Actions runner.
+- Branch protection status check `Lint & Safety Checks` verified via GitHub API (`gh api repos/Dungx2409/pr-preview-platform/branches/main/protection`).
+- Intentional failure test: commit `af5da27` caused CI Run ID `40160214719` to fail (`X Lint & Safety Checks in 36s`) and blocked PR #20.
+- Reverted commit `d65a4c6` caused CI Run ID `40160307397` to succeed (`✓ Lint & Safety Checks in 2m35s`). PR #20 merged into `main` (`522dd1d`).
+**Gotchas / decisions:**
+- PostgreSQL container on Alpine needs write access to `/var/run/postgresql` and `/tmp`. Mounting `emptyDir` volumes to those paths allows enforcing `readOnlyRootFilesystem: true` without container boot crashes.
+**Learned (interview note):** I can explain this because a robust CI gate shouldn't just run unit tests—it must act as a multi-layered defense checking code quality (Ruff), infrastructure syntax (Ansible-lint/Yamllint/ShellCheck), container/manifest security posture (Trivy), secret hygiene (Gitleaks), and Kubernetes schema conformity (Kubeconform) before code merges to main.
+**Next:** T-4.2 — `preview.yml` build + scan + push (per-PR container packaging pipeline).
 
 ### 2026-10-23 — T-3.5 — Tier 1 — shared environment
 **Did:** Fully implemented and validated the Tier 1 shared environment lifecycle, automated container build pipeline, and GitOps synchronization:

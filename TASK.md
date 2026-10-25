@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.1 full ci.yml)**
+**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.2 preview.yml build + scan + push)**
 
 ---
 
@@ -96,7 +96,7 @@
 
 ## Phase 4 — CI + per-PR previews (Tier 2)
 
-- [ ] **T-4.1** 🤖 **`ci.yml` full** — app tests, `helm lint`/kubeconform, ansible-lint, yamllint, shellcheck, Trivy config+fs, gitleaks.
+- [x] **T-4.1** 🤖 **`ci.yml` full** — app tests, `helm lint`/kubeconform, ansible-lint, yamllint, shellcheck, Trivy config+fs, gitleaks.
   - *Acceptance:* required status checks configured; a deliberately broken change fails CI.
 
 - [ ] **T-4.2** 🤖 **`preview.yml` build + scan + push** (depends T-3.1)
