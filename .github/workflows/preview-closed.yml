@@ -1,0 +1,120 @@
+---
+name: Preview Teardown & Cleanup
+
+"on":
+  pull_request:
+    types:
+      - closed
+      - unlabeled
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  packages: write
+  pull-requests: write
+  deployments: write
+
+env:
+  TAILNET_NAME: taildc1471.ts.net
+
+jobs:
+  teardown-preview:
+    name: Clean Up PR Preview Artifacts & State
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.action == 'unlabeled' && github.event.label.name == 'preview') ||
+        (github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'preview'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Deactivate GitHub Deployments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          ENV_NAME="pr-${PR_NUMBER}"
+          echo "Finding active deployments for environment ${ENV_NAME}..."
+
+          DEPLOYMENT_IDS=$(gh api "repos/${{ github.repository }}/deployments?environment=${ENV_NAME}" \
+            --jq '.[].id' 2>/dev/null || true)
+
+          if [ -n "${DEPLOYMENT_IDS}" ]; then
+            for dep_id in ${DEPLOYMENT_IDS}; do
+              echo "Deactivating deployment ${dep_id}..."
+              gh api -X POST "repos/${{ github.repository }}/deployments/${dep_id}/statuses" \
+                -f state="inactive" \
+                -f description="Preview environment ${ENV_NAME} torn down" || true
+            done
+          else
+            echo "No active deployments found for ${ENV_NAME}."
+          fi
+
+      - name: Delete GHCR image tags for PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          PACKAGE_NAME="demo-app"
+
+          echo "Querying GHCR versions for package ${PACKAGE_NAME} matching pr-${PR_NUMBER}-*..."
+
+          VERSION_IDS=$(gh api "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions" \
+            --paginate \
+            --jq ".[] | select(.metadata.container.tags[]? | startswith(\"pr-${PR_NUMBER}-\")) | .id" 2>/dev/null \
+            | sort -u || true)
+
+          if [ -n "${VERSION_IDS}" ]; then
+            for vid in ${VERSION_IDS}; do
+              echo "Deleting package version ID ${vid}..."
+              if ! gh api --method DELETE \
+                "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions/${vid}"; then
+                echo "Retrying delete via /user/packages endpoint..."
+                gh api --method DELETE \
+                  "user/packages/container/${PACKAGE_NAME}/versions/${vid}" || true
+              fi
+            done
+          else
+            echo "No GHCR package versions found for PR #${PR_NUMBER}."
+          fi
+
+      - name: Update PR comment with teardown status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          MARKER="<!-- pr-preview-platform-comment -->"
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          BODY=$(cat <<EOF
+          ${MARKER}
+          ### 🧹 Preview Environment Deactivated
+
+          Preview environment for **PR #${PR_NUMBER}** has been dismantled:
+          - **Environment:** \`pr-${PR_NUMBER}\`
+          - **Status:** Inactive & cleaned up
+          - **Cluster resources:** Namespace \`pr-${PR_NUMBER}\`, pods, and Tailscale proxy removed
+          - **Images:** Container tags \`pr-${PR_NUMBER}-*\` deleted from GHCR
+          - **Deactivated at:** \`${TIMESTAMP}\`
+
+          > ℹ️ **Note:** Argo CD cascades namespace pruning via \`resources-finalizer\`.
+          EOF
+          )
+
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n 1)
+
+          if [ -n "${COMMENT_ID}" ]; then
+            echo "Updating comment ${COMMENT_ID} on PR #${PR_NUMBER}..."
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
+              -f body="${BODY}"
+          else
+            echo "Creating teardown comment on PR #${PR_NUMBER}..."
+            gh api -X POST "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+              -f body="${BODY}"
+          fi
