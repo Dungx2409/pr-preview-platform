@@ -129,26 +129,20 @@ jobs:
           ENV_NAME="pr-${PR_NUMBER}"
 
           echo "Creating deployment for environment ${ENV_NAME}..."
-          DEPLOYMENT_ID=$(gh api -X POST "repos/${{ github.repository }}/deployments" --input - <<EOF | jq -r '.id'
-          {
-            "ref": "${{ github.event.pull_request.head.sha }}",
-            "environment": "${ENV_NAME}",
-            "auto_merge": false,
-            "required_contexts": [],
-            "description": "Preview environment for PR #${PR_NUMBER}"
-          }
-          EOF
-          )
+          DEPLOY_PAYLOAD=$(printf \
+            '{"ref":"%s","environment":"%s","auto_merge":false,"required_contexts":[],"description":"PR #%s preview"}' \
+            "${{ github.event.pull_request.head.sha }}" \
+            "${ENV_NAME}" \
+            "${PR_NUMBER}")
+
+          DEPLOYMENT_ID=$(echo "${DEPLOY_PAYLOAD}" | \
+            gh api -X POST "repos/${{ github.repository }}/deployments" --input - --jq '.id')
 
           if [ -n "${DEPLOYMENT_ID}" ] && [ "${DEPLOYMENT_ID}" != "null" ]; then
             echo "Setting deployment status to success for deployment ${DEPLOYMENT_ID}..."
-            gh api -X POST "repos/${{ github.repository }}/deployments/${DEPLOYMENT_ID}/statuses" --input - <<EOF
-            {
-              "state": "success",
-              "environment": "${ENV_NAME}",
-              "environment_url": "${PREVIEW_URL}",
-              "log_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-              "description": "Preview image built and deployed to ${ENV_NAME}"
-            }
-            EOF
+            RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            FMT='{"state":"success","environment":"%s","environment_url":"%s","log_url":"%s"}'
+            STATUS_PAYLOAD=$(printf "${FMT}" "${ENV_NAME}" "${PREVIEW_URL}" "${RUN_URL}")
+            echo "${STATUS_PAYLOAD}" | \
+              gh api -X POST "repos/${{ github.repository }}/deployments/${DEPLOYMENT_ID}/statuses" --input -
           fi
