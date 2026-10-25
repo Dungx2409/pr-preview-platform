@@ -102,6 +102,32 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-25 — T-4.2 — `preview.yml` build + scan + push
+**Did:** Implemented the automated per-PR preview packaging workflow in `.github/workflows/preview.yml`:
+- Configured triggers for `pull_request` types: `[opened, synchronize, reopened, labeled]`.
+- Enforced security gates at the job level:
+  - Label gate: `contains(github.event.pull_request.labels.*.name, 'preview')`
+  - Fork-safety gate: `github.event.pull_request.head.repo.full_name == github.repository`
+- Configured concurrency per PR (`preview-${{ github.event.pull_request.number }}` with `cancel-in-progress: true`), least-privilege permissions (`contents: read`, `packages: write`), and 15-minute job timeout.
+- Container build and security scanning:
+  - Builds Docker image tagged `ghcr.io/<owner>/demo-app:pr-<N>-<shortsha>` from PR head checkout (`ref: ${{ github.event.pull_request.head.sha }}`).
+  - Scans with Trivy action (`aquasecurity/trivy-action@v0.36.0`) with `exit-code: 1` on CRITICAL/HIGH.
+  - Authenticates to GHCR via `docker/login-action@v4.6.0` and pushes tag `pr-<N>-<shortsha>`.
+- Verified acceptance criteria on PR #22:
+  - Unlabeled PR: job was automatically skipped (`conclusion: skipped`).
+  - Labeled PR: adding label `preview` triggered the workflow, built the image, passed Trivy scan (0 CVEs), and published `ghcr.io/dungx2409/demo-app:pr-22-2c6fc60` to GHCR.
+  - Merged PR #22 into `main` (`56617f5`).
+**Why this approach:** Enforcing the `preview` label gate and fork-safety condition ensures that only maintainer-vetted PRs within the same repository consume GitHub Actions runner compute and push container artifacts to GHCR. The `pr-<N>-<shortsha>` naming scheme guarantees deterministic, unique image versioning for each pull request iteration.
+**Verified:**
+- Workflow skipped when opened without label (Run ID `40161037993`: `conclusion: skipped`).
+- Workflow executed successfully upon adding label `preview` (Run ID `40161086040`: 38s execution).
+- Package tag verified via GitHub Packages API: `gh api /user/packages/container/demo-app/versions` returned tag `pr-22-2c6fc60`.
+**Gotchas / decisions:**
+- Pinned actions (`actions/checkout@v7.0.1`, `aquasecurity/trivy-action@v0.36.0`, `docker/login-action@v4.6.0`) align with `docs/versions.md`.
+**Learned (interview note):** I can explain this because per-PR preview pipelines must strictly isolate build triggers and credentials: fork PRs must never execute with repository package write tokens, and compute should only be triggered after maintainer triage via PR labels (`preview`), preventing crypto-mining and GHCR pollution.
+**Next:** T-4.3 — `ApplicationSet` (GitOps generator for per-PR preview environments).
+
+
 ### 2026-10-25 — T-4.1 — `ci.yml` full
 **Did:** Implemented comprehensive multi-linter, security scanning, and unit testing pipeline in `.github/workflows/ci.yml`:
 - Configured Python 3.10 linting and formatting using **Ruff 0.11.11** via `pyproject.toml` (`target-version = "py310"`, `line-length = 100`, `select = ["E", "W", "F", "I", "UP", "B"]`). Cleaned all Python code in `demo-app/` to achieve 0 Ruff warnings/errors.
