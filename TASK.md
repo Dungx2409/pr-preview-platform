@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.2 preview.yml build + scan + push)**
+**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.3 ApplicationSet)**
 
 ---
 
@@ -99,7 +99,7 @@
 - [x] **T-4.1** 🤖 **`ci.yml` full** — app tests, `helm lint`/kubeconform, ansible-lint, yamllint, shellcheck, Trivy config+fs, gitleaks.
   - *Acceptance:* required status checks configured; a deliberately broken change fails CI.
 
-- [ ] **T-4.2** 🤖 **`preview.yml` build + scan + push** (depends T-3.1)
+- [x] **T-4.2** 🤖 **`preview.yml` build + scan + push** (depends T-3.1)
   - Gates: label `preview` AND same-repo PR; Trivy image scan (HIGH/CRITICAL fail); push `pr-<N>-<shortsha>`; concurrency per PR; least-privilege permissions; timeouts.
   - *Acceptance:* a labeled PR pushes the expected tag; an unlabeled PR and a simulated fork PR do **not** run the job.
 
