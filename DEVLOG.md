@@ -28,7 +28,7 @@
 
 | Metric | Target | Result | Date | How measured |
 |---|---|---|---|---|
-| PR labeled → URL healthy (p50 / p95) | p50 ≤ 5 min | — | — | — |
+| PR labeled → URL healthy (p50 / p95) | p50 ≤ 5 min | **102 s** (1m 42s) | 2026-10-25 | Stopwatch from PR #26 opened (12:13:42) to `curl https://pr-26.taildc1471.ts.net/` HTTP 200 (12:15:24) (T-4.4) |
 | PR closed → everything gone | ≤ 3 min | — | — | — |
 | Rebuild from empty project | ≤ 30 min | — | — | — |
 | Leaks after 20 open/close cycles | 0 | — | — | — |
@@ -75,6 +75,11 @@
    - *Cause:* Argo CD ApplicationSet Pull Request generator template variable `{{head_short_sha}}` produces an 8-character commit prefix (e.g. `b2f4477f`), whereas standard git short SHA or naive scripts produce 7 characters (`b2f4477`).
    - *Fix:* Ensure the CI build/push workflow tags both 7-character and 8-character short SHAs (`pr-<N>-<sha7>` and `pr-<N>-<sha8>`).
 
+7. **GitHub Deployment API payload typing & bash heredocs in GHA:**
+   - *Symptom:* `gh api repos/:owner/:repo/deployments` fails with HTTP 422 (`"[]" is not an array or null`), or workflow job exits with bash syntax error `warning: here-document delimited by end-of-file`.
+   - *Cause:* Passing `-F required_contexts='[]'` sends a string `'[]'` rather than a raw JSON array. Additionally, using `<<EOF` with indentation inside YAML `run: |` blocks causes YAML block indentation issues when unindented, or bash parsing errors when indented.
+   - *Fix:* Format the JSON payload cleanly via `printf '{"ref":"%s",...}' ...` and pipe directly into `gh api ... --input -`.
+
 ## Open questions / blockers
 
 | # | Question | Owner | Status |
@@ -106,6 +111,31 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-25 — T-4.4 — PR comment + Deployment status
+**Did:** Implemented Option C (SPEC §6.7) in `.github/workflows/preview.yml` to publish preview URLs directly to GitHub PRs:
+- Updated `.github/workflows/preview.yml`:
+  - Added permissions: `pull-requests: write`, `deployments: write`.
+  - Added env variable `TAILNET_NAME: taildc1471.ts.net`.
+  - Added step `Upsert PR comment with preview link`: uses `gh api` to find existing comments matching marker `<!-- pr-preview-platform-comment -->`. If found, updates via `PATCH`; if not found, posts via `POST`. Displays a clean markdown table with preview URL (`https://pr-<N>.<tailnet>.ts.net/`), environment, image tag, commit SHA, and Tailscale access note.
+  - Added step `Create GitHub Deployment status`: uses `gh api` to create a GitHub Deployment for environment `pr-<N>` (`transient_environment: true`, `required_contexts: []`), and sets status to `state: "success"`, `environment_url: https://pr-<N>.<tailnet>.ts.net/`.
+- Verified on test PR #26:
+  - Initial run created PR comment ID `6393808761` with preview details.
+  - Subsequent push updated comment ID `6393808761` in-place (no duplicate comments).
+  - GitHub Deployment `id: 7309005298` created and visible in GitHub environment/deployment UI with `success` state.
+  - Live HTTPS endpoint `https://pr-26.taildc1471.ts.net/` verified returning HTTP/2 200 with new SHA `a64f84e917f73926b54ea77853ff3554c9b6fed4` and `db: "ok"`.
+  - Measured Time-to-Ready: PR opened at 12:13:42 -> healthy live HTTP 200 at 12:15:24 = **102 seconds** (~1m 42s).
+- Merged PR #26 into `main` (`f991a91`).
+**Why this approach:** Option C provides instant, deterministic feedback in the PR discussion thread without runner credential leakage or complex polling. Idempotent upsert via HTML comment marker prevents comment clutter during active iterative PR pushes.
+**Verified:**
+- `gh api repos/Dungx2409/pr-preview-platform/issues/26/comments` confirmed comment updated in-place with marker.
+- `gh api repos/Dungx2409/pr-preview-platform/deployments` confirmed active deployment with `success` status and environment URL.
+- `curl -s -i https://pr-26.taildc1471.ts.net/` returned HTTP 200.
+- `make lint` green.
+**Gotchas / decisions:**
+- *GitHub Deployments API payload typing:* Passing `-F required_contexts='[]'` sends a string instead of a JSON array, causing HTTP 422. Formatted JSON via `printf` piped to `gh api --input -` to ensure correct JSON types and avoid YAML/bash heredoc EOF conflicts.
+**Learned (interview note):** I can explain this because developer ergonomics in GitOps workflows rely on linking Git events with runtime environments. Utilizing GitHub Deployments gives visibility into active environments in PR conversation headers, and HTML-anchored comment upserts ensure reviewers always see the latest build artifacts without comment noise.
+**Next:** T-4.5 — `preview-closed.yml` cleanup (delete GHCR tags, deactivate Deployment, post teardown comment).
 
 ### 2026-10-25 — T-4.3 — ApplicationSet
 **Did:** Implemented and validated the GitOps Pull Request generator ApplicationSet for Tier 2 per-PR preview environments:

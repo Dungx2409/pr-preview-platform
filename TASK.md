@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.4 PR comment + Deployment status)**
+**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.5 preview-closed.yml cleanup)**
 
 ---
 
@@ -107,7 +107,7 @@
   - Per SPEC §6.4 (verify fields against pinned docs); repo/owner/chart path parameterized; `requeueAfterSeconds` tuned. **Record in DEVLOG:** is the namespace deleted with the Application? Is the proxy pod/tailnet device removed? Fix if not.
   - *Acceptance:* labeled PR ⇒ Application `preview-pr-<N>` Healthy/Synced; removing the label ⇒ Application, namespace and tailnet device gone.
 
-- [ ] **T-4.4** 🤖 **PR comment + Deployment status** (depends T-4.2, T-4.3)
+- [x] **T-4.4** 🤖 **PR comment + Deployment status** (depends T-4.2, T-4.3)
   - Implement the mechanism chosen in T-2.0 (A/B/C, SPEC §6.7): ONE upserted PR comment with the private link; Deployment status for environment `pr-<N>`.
   - *Acceptance:* comment appears once and updates on new pushes; a tailnet member opens the link from the comment; time-to-ready recorded in DEVLOG Metrics.
 
