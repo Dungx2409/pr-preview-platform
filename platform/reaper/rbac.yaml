@@ -1,0 +1,44 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reaper
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: reaper
+    app.kubernetes.io/part-of: pr-preview-platform
+    app.kubernetes.io/component: safety-net
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reaper-cluster-role
+  labels:
+    app.kubernetes.io/name: reaper
+    app.kubernetes.io/part-of: pr-preview-platform
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reaper-cluster-rolebinding
+  labels:
+    app.kubernetes.io/name: reaper
+    app.kubernetes.io/part-of: pr-preview-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: reaper-cluster-role
+subjects:
+  - kind: ServiceAccount
+    name: reaper
+    namespace: argocd
