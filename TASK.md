@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.5 preview-closed.yml cleanup)**
+**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.6 scripts/verify-teardown.sh + 20-cycle test)**
 
 ---
 
@@ -111,7 +111,7 @@
   - Implement the mechanism chosen in T-2.0 (A/B/C, SPEC §6.7): ONE upserted PR comment with the private link; Deployment status for environment `pr-<N>`.
   - *Acceptance:* comment appears once and updates on new pushes; a tailnet member opens the link from the comment; time-to-ready recorded in DEVLOG Metrics.
 
-- [ ] **T-4.5** 🤖 **`preview-closed.yml` cleanup** — delete GHCR tags for the PR, deactivate Deployment, final comment.
+- [x] **T-4.5** 🤖 **`preview-closed.yml` cleanup** — delete GHCR tags for the PR, deactivate Deployment, final comment.
   - *Acceptance:* closing/merging a PR leaves no tags, namespace, Application, proxy pod or tailnet device.
 
 - [ ] **T-4.6** 🤖 **`scripts/verify-teardown.sh` + 20-cycle test**
