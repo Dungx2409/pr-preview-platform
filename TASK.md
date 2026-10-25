@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 5 — Hardening + cleanup (T-5.1 Reaper CronJob)**
+**→ Phase 5 — Hardening + cleanup (T-5.2 Security verification)**
 
 ---
 
@@ -122,7 +122,7 @@
 
 ## Phase 5 — Hardening + cleanup
 
-- [ ] **T-5.1** 🤖 **Reaper CronJob** (dry-run first) per SPEC §6.9.
+- [x] **T-5.1** 🤖 **Reaper CronJob** (dry-run first) per SPEC §6.9.
   - *Acceptance:* an orphan namespace older than TTL is detected (dry-run), then reaped after the owner enables delete mode; stale Tailscale devices checked.
 
 - [ ] **T-5.2** 🤖 **Security verification** — fork-safety, no CI cluster credentials, 6443/Argo CD UI not exposed, NetworkPolicy, PSS, non-root, ACL group behavior.

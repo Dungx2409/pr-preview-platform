@@ -112,6 +112,41 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-25 — T-5.1 — Reaper CronJob (dry-run first)
+**Did:** Implemented the background safety-net Reaper worker running as a Kubernetes CronJob in namespace `argocd` per SPEC §6.9:
+- Developed `reaper/src/reaper.py`:
+  - Zero external pip dependencies; built purely with Python 3.10 standard library (`urllib.request`, `json`, `ssl`).
+  - Queries Kubernetes API using in-cluster ServiceAccount token and CA bundle (`https://kubernetes.default.svc`).
+  - Queries GitHub API (`GET /repos/:owner/:repo/pulls?state=open`) using optional token secret to fetch open PRs with label `preview`.
+  - Reconciles active preview namespaces (`pr-*`) and Argo CD Applications (`preview-pr-*`):
+    - Identifies orphans (PR closed or lacking `preview` label).
+    - Identifies TTL expirations (age > `PREVIEW_TTL_HOURS`, default 12h) using Application `metadata.creationTimestamp`.
+  - Mode controls via `DRY_RUN`:
+    - `DRY_RUN="true"` (default): logs candidate namespaces and TTL expirations without modifying resources.
+    - `DRY_RUN="false"`: deletes Argo CD Application (triggering `resources-finalizer` cascade) and deletes namespace.
+  - Audits Tailscale proxy pods in namespace `tailscale` (`ts-preview-pr-*`) and logs warnings on stale or orphaned devices.
+- Created unit tests in `reaper/tests/test_reaper.py` (6 test cases covering timestamp parsing, GitHub API querying, dry-run candidate logging, active deletion, TTL expirations, and stale Tailscale proxies).
+- Updated `Makefile` and `pyproject.toml` to register `reaper/tests` in `make test`.
+- Created Kubernetes manifests in `platform/reaper/`:
+  - `rbac.yaml`: `ServiceAccount: reaper`, `ClusterRole` with least-privilege permissions on namespaces, pods, and Argo CD applications, and `ClusterRoleBinding`.
+  - `configmap.yaml`: `ConfigMap: reaper-script` mounting `reaper.py` into container at `/app/reaper.py`.
+  - `cronjob.yaml`: `CronJob: reaper` scheduled `*/15 * * * *`, hardened securityContext (UID 10001, drop ALL capabilities, read-only root FS, `RuntimeDefault` seccomp profile).
+  - `README.md`: Architecture overview, configuration env vars, and operational runbook.
+- Verified dry-run and active reap cycles on simulated orphan namespace `pr-999`:
+  - Dry-run: detected candidate, logged `[DRY-RUN] Candidate: ns='pr-999', age=0.0h. Reason: PR #999 is closed or unlabeled. Action: would reap.`, namespace remained intact.
+  - Active mode: logged `[REAP] Deleting orphan preview environment: namespace='pr-999' ... [INFO] Deleted Kubernetes namespace 'pr-999'`. Namespace deleted (`NotFound`).
+- Merged PR #32 into `main` (`17eb285`).
+**Why this approach:** Using Python standard library eliminates third-party dependencies, allowing execution directly on official `python:3.10-slim` without custom image build pipelines or vulnerability bloat. Operating as an in-cluster CronJob provides an essential defense-in-depth safety net against missed webhook events, runner cancellations, or manual testing debris.
+**Verified:**
+- `make test`: All 12 unit tests passed.
+- `make lint`: 100% green (Trivy 0 misconfigurations on `platform/reaper/*.yaml`, yamllint clean, ansible-lint clean, ruff clean, shellcheck clean).
+- Simulated orphan `pr-999` dry-run log: detected candidate; active log: deleted namespace and confirmed `NotFound`.
+**Gotchas / decisions:**
+- *Trivy KSV-0118:* Pod-level `securityContext` (`runAsNonRoot: true`, `runAsUser: 10001`, `runAsGroup: 10001`, `fsGroup: 10001`, `seccompProfile: {type: RuntimeDefault}`) must be defined alongside container-level securityContext to satisfy container security standards without high severity warnings.
+- *Cascading reap sequence:* Reaper must delete the Argo CD `Application` prior to deleting the `Namespace` to ensure Argo CD's `resources-finalizer` triggers first, pruning the Ingress and unregistering the Tailscale proxy device cleanly.
+**Learned (interview note):** I can explain this because enterprise preview platforms require a dual-action teardown strategy: event-driven teardown (GitHub Actions webhooks on PR close) handles the primary path, while an autonomous state reconciler (Reaper CronJob) acts as a background safety net to enforce TTL limits and eliminate zombie infrastructure if webhooks fail or are terminated prematurely.
+**Next:** T-5.2 — Security verification (`docs/security.md` matrix).
+
 ### 2026-10-25 — T-4.6 — scripts/verify-teardown.sh + 20-cycle test
 **Did:** Implemented automated teardown verification and stress-tested the preview lifecycle over 20 consecutive cycles:
 - Created `scripts/verify-teardown.sh`:
