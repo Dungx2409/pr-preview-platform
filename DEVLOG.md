@@ -70,6 +70,11 @@
    - *Cause:* By default Postgres writes its unix domain socket in `/var/run/postgresql` and temp files in `/tmp`.
    - *Fix:* Mount `emptyDir` volumes at `/var/run/postgresql` and `/tmp` in addition to `/var/lib/postgresql/data`.
 
+6. **Argo CD Pull Request Generator `head_short_sha` length (8 chars vs 7 chars):**
+   - *Symptom:* Container image pull fails with `ImagePullBackOff: not found` even after CI pushed the short SHA image.
+   - *Cause:* Argo CD ApplicationSet Pull Request generator template variable `{{head_short_sha}}` produces an 8-character commit prefix (e.g. `b2f4477f`), whereas standard git short SHA or naive scripts produce 7 characters (`b2f4477`).
+   - *Fix:* Ensure the CI build/push workflow tags both 7-character and 8-character short SHAs (`pr-<N>-<sha7>` and `pr-<N>-<sha8>`).
+
 ## Open questions / blockers
 
 | # | Question | Owner | Status |
@@ -101,6 +106,36 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-25 — T-4.3 — ApplicationSet
+**Did:** Implemented and validated the GitOps Pull Request generator ApplicationSet for Tier 2 per-PR preview environments:
+- Deployed `platform/argocd/applicationset-previews.yaml` into namespace `argocd`:
+  - PullRequest generator targeting repository `Dungx2409/pr-preview-platform`, filtering by label `preview`, using `github-token` secret, polling with `requeueAfterSeconds: 30`.
+  - Generates Application `preview-pr-{{number}}` deploying Helm chart `charts/app` with `targetRevision: '{{head_sha}}'`, `destination.namespace: 'pr-{{number}}'`, and parameterized values (`env: 'pr-{{number}}'`, `pr.number: '{{number}}'`, `image.tag: 'pr-{{number}}-{{head_short_sha}}'`, `ingress.hostname: 'pr-{{number}}'`, `namespace.create: true`).
+  - Attached finalizer `resources-finalizer.argocd.argoproj.io` and automated sync with `prune: true`, `selfHeal: true`.
+- Updated `charts/app/templates/namespace.yaml` to stamp `preview=true` and `pr={{ .Values.pr.number }}` labels on dynamically created preview namespaces.
+- Updated `.github/workflows/preview.yml` to push both 7-char and 8-char short SHA tags to GHCR, ensuring seamless alignment with Argo CD's 8-char `head_short_sha`.
+- Verified full end-to-end lifecycle on PR #24:
+  - Labeling PR with `preview` triggered Application generation: `argocd-applicationset-controller` logged `created Application preview-pr-24`.
+  - Application reached `Synced` and `Healthy`.
+  - App pod and ephemeral Postgres pod reached `1/1 Running`.
+  - Tailscale operator dynamically provisioned proxy pod `ts-preview-pr-24-app-hh7z6-0` and joined `pr-24` device to tailnet.
+  - Live HTTPS endpoint `https://pr-24.taildc1471.ts.net/` returned HTTP 200 with isolated DB status (`db: "ok"`). Verified `/counter` isolated increments: `pr-24` incremented 0 -> 1 -> 2 while `shared` remained 0.
+  - Removing label `preview` triggered automated teardown: Application `preview-pr-24` deleted, namespace `pr-24` deleted (`NotFound`), Tailscale proxy pod deleted, device cleanly unexposed from tailnet (`"unexposed ingress from tailnet"`). 0 resource leaks.
+- Merged PR #24 into `main` (`839e465`).
+**Why this approach:** Pull Request generator in ApplicationSet provides a truly declarative, pull-based GitOps preview lifecycle. CI never connects to Kubernetes API, eliminating credential exposure risk. Having the chart own the `Namespace` resource ensures Argo CD's resources-finalizer cascades namespace deletion cleanly upon unlabeling or PR closure.
+**Verified:**
+- `kubectl get applicationset -n argocd` showed `previews` active.
+- Controller logs: `generated 1 applications` -> `created Application preview-pr-24`.
+- Curl tests: `curl https://pr-24.taildc1471.ts.net/` -> HTTP 200 `{"env":"pr-24","pr":"24","sha":"...","db":"ok"}`.
+- Teardown verification: `kubectl get ns pr-24` returned `NotFound`; Tailscale device `pr-24` connection refused.
+**Gotchas / decisions:**
+- *Is the namespace deleted with the Application?* YES. Because `namespace.create: true` renders a managed `Namespace` manifest in Helm, Argo CD tracks and deletes the namespace when the Application is pruned.
+- *Is the proxy pod and tailnet device removed?* YES. Tailscale Operator observes Ingress deletion and cleanly unregisters the tailnet node and removes the proxy pod.
+- *Short SHA length mismatch:* Argo CD's `{{head_short_sha}}` is 8 characters long, while standard scripts cut 7 characters. Workflow now publishes both tags.
+**Learned (interview note):** I can explain this because GitOps preview platforms must solve the full lifecycle: declarative creation via ApplicationSet PR generator, dynamic parameter injection, and clean teardown via resource finalizers. Ensuring the Helm chart manages the namespace object prevents orphan namespaces that commonly plague default Argo CD setups.
+**Next:** T-4.4 — PR comment + Deployment status (Option C: CI posts private link comment after push).
+
 
 ### 2026-10-25 — T-4.2 — `preview.yml` build + scan + push
 **Did:** Implemented the automated per-PR preview packaging workflow in `.github/workflows/preview.yml`:

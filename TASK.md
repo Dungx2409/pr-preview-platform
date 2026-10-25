@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.3 ApplicationSet)**
+**→ Phase 4 — CI + per-PR previews (Tier 2) (T-4.4 PR comment + Deployment status)**
 
 ---
 
@@ -103,7 +103,7 @@
   - Gates: label `preview` AND same-repo PR; Trivy image scan (HIGH/CRITICAL fail); push `pr-<N>-<shortsha>`; concurrency per PR; least-privilege permissions; timeouts.
   - *Acceptance:* a labeled PR pushes the expected tag; an unlabeled PR and a simulated fork PR do **not** run the job.
 
-- [ ] **T-4.3** 🤖 **ApplicationSet** (depends T-2.4, T-3.4)
+- [x] **T-4.3** 🤖 **ApplicationSet** (depends T-2.4, T-3.4)
   - Per SPEC §6.4 (verify fields against pinned docs); repo/owner/chart path parameterized; `requeueAfterSeconds` tuned. **Record in DEVLOG:** is the namespace deleted with the Application? Is the proxy pod/tailnet device removed? Fix if not.
   - *Acceptance:* labeled PR ⇒ Application `preview-pr-<N>` Healthy/Synced; removing the label ⇒ Application, namespace and tailnet device gone.
 
