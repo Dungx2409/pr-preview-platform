@@ -17,5 +17,5 @@ ignore = []
 "**/tests/**" = ["E402"]
 
 [tool.pytest.ini_options]
-testpaths = ["demo-app/tests", "exporter/tests"]
-pythonpath = ["demo-app/src", "exporter/src"]
+testpaths = ["demo-app/tests", "exporter/tests", "reaper/tests"]
+pythonpath = ["demo-app/src", "exporter/src", "reaper/src"]

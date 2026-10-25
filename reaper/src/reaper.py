@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""PR Preview Platform - Reaper.
+
+Safety-net background worker that periodically detects and reaps orphan or
+expired preview environments (SPEC §6.9, Task T-5.1).
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import ssl
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from typing import Any
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("reaper")
+
+PR_NS_PATTERN = re.compile(r"^pr-(\d+)$")
+
+
+class K8sClient:
+    """Lightweight Kubernetes API client using standard library urllib."""
+
+    def __init__(self, api_server: str = "", token: str = "", ca_file: str = "") -> None:
+        self.api_server = api_server or os.environ.get(
+            "KUBERNETES_SERVICE_HOST_URL", "https://kubernetes.default.svc"
+        )
+        self.token = token
+        self.ca_file = ca_file
+
+        if not self.token and os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token"):
+            with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
+                self.token = f.read().strip()
+
+        if not self.ca_file and os.path.exists(
+            "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        ):
+            self.ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+        self.ssl_context = ssl.create_default_context()
+        if self.ca_file and os.path.exists(self.ca_file):
+            self.ssl_context.load_verify_locations(self.ca_file)
+        elif not os.path.exists(self.ca_file or ""):
+            # For local test / mock environments
+            self.ssl_context.check_hostname = False
+            self.ssl_context.verify_mode = ssl.CERT_NONE
+
+    def request(self, method: str, path: str, payload: dict | None = None) -> Any:
+        url = f"{self.api_server.rstrip('/')}/{path.lstrip('/')}"
+        data = json.dumps(payload).encode("utf-8") if payload else None
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, context=self.ssl_context, timeout=10) as resp:
+                if resp.status == 204:
+                    return None
+                body = resp.read().decode("utf-8")
+                return json.loads(body) if body else None
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            body = e.read().decode("utf-8") if e.fp else ""
+            logger.error("K8s API error %s %s: HTTP %s - %s", method, path, e.code, body)
+            raise
+
+    def list_namespaces(self) -> list[dict[str, Any]]:
+        res = self.request("GET", "/api/v1/namespaces")
+        return res.get("items", []) if res else []
+
+    def delete_namespace(self, name: str) -> None:
+        self.request("DELETE", f"/api/v1/namespaces/{name}")
+
+    def list_argo_applications(self, namespace: str = "argocd") -> list[dict[str, Any]]:
+        res = self.request("GET", f"/apis/argoproj.io/v1alpha1/namespaces/{namespace}/applications")
+        return res.get("items", []) if res else []
+
+    def delete_argo_application(self, name: str, namespace: str = "argocd") -> None:
+        self.request(
+            "DELETE",
+            f"/apis/argoproj.io/v1alpha1/namespaces/{namespace}/applications/{name}",
+        )
+
+    def list_tailscale_proxy_pods(self) -> list[dict[str, Any]]:
+        res = self.request("GET", "/api/v1/namespaces/tailscale/pods")
+        return res.get("items", []) if res else []
+
+
+def get_open_preview_prs(repo: str, token: str) -> set[int]:
+    """Query GitHub API to obtain set of open PR numbers with label 'preview'."""
+    url = f"https://api.github.com/repos/{repo}/pulls?state=open&per_page=100"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "pr-preview-platform-reaper",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        logger.error("GitHub API error: HTTP %s - %s", e.code, e.read().decode("utf-8"))
+        raise
+
+    open_prs: set[int] = set()
+    for pr in data:
+        labels = [lbl.get("name") for lbl in pr.get("labels", [])]
+        if "preview" in labels:
+            open_prs.add(pr["number"])
+
+    return open_prs
+
+
+def parse_rfc3339(ts_str: str) -> datetime:
+    """Parse standard RFC3339 timestamp (e.g. 2026-10-25T05:46:02Z)."""
+    clean_ts = ts_str.rstrip("Z")
+    dt = datetime.fromisoformat(clean_ts)
+    return dt.replace(tzinfo=timezone.utc)
+
+
+def reap_cycle(
+    k8s: K8sClient,
+    github_repo: str,
+    github_token: str,
+    ttl_hours: float,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Execute one scan and reap cycle.
+
+    Returns summary dictionary with counts and actions taken.
+    """
+    logger.info(
+        "Starting reaper cycle (dry_run=%s, ttl_hours=%s, repo=%s)",
+        dry_run,
+        ttl_hours,
+        github_repo,
+    )
+
+    open_prs = get_open_preview_prs(github_repo, github_token)
+    logger.info("Found %d open PRs with label 'preview': %s", len(open_prs), sorted(open_prs))
+
+    namespaces = k8s.list_namespaces()
+    argo_apps = {
+        app["metadata"]["name"]: app for app in k8s.list_argo_applications(namespace="argocd")
+    }
+    proxy_pods = k8s.list_tailscale_proxy_pods()
+
+    now = datetime.now(timezone.utc)
+    reaped_count = 0
+    scanned_count = 0
+
+    candidates: list[dict[str, Any]] = []
+
+    for ns in namespaces:
+        name = ns.get("metadata", {}).get("name", "")
+        match = PR_NS_PATTERN.match(name)
+        if not match:
+            continue
+
+        scanned_count += 1
+        pr_number = int(match.group(1))
+        created_str = ns.get("metadata", {}).get("creationTimestamp", "")
+        created_at = parse_rfc3339(created_str) if created_str else now
+        age_hours = (now - created_at).total_seconds() / 3600.0
+
+        is_orphan = pr_number not in open_prs
+        is_expired = age_hours > ttl_hours
+
+        if is_orphan or is_expired:
+            reason = (
+                f"PR #{pr_number} is closed or unlabeled"
+                if is_orphan
+                else f"Age ({age_hours:.1f}h) exceeds TTL ({ttl_hours:.1f}h)"
+            )
+            candidates.append(
+                {
+                    "namespace": name,
+                    "pr_number": pr_number,
+                    "reason": reason,
+                    "age_hours": age_hours,
+                }
+            )
+
+    logger.info(
+        "Scanned %d preview namespace(s), found %d orphan/expired candidate(s)",
+        scanned_count,
+        len(candidates),
+    )
+
+    for cand in candidates:
+        ns_name = cand["namespace"]
+        reason = cand["reason"]
+        age_h = cand["age_hours"]
+        app_name = f"preview-{ns_name}"
+
+        if dry_run:
+            logger.info(
+                "[DRY-RUN] Candidate: ns='%s', age=%.1fh. Reason: %s. Action: would reap.",
+                ns_name,
+                age_h,
+                reason,
+            )
+            reaped_count += 1
+        else:
+            logger.warning(
+                "[REAP] Deleting orphan preview environment: namespace='%s', age=%.1fh. Reason: %s",
+                ns_name,
+                age_h,
+                reason,
+            )
+            # 1. Delete Argo CD Application if it exists (triggers GitOps finalizer cascade)
+            if app_name in argo_apps:
+                try:
+                    k8s.delete_argo_application(app_name, namespace="argocd")
+                    logger.info("Deleted Argo CD Application '%s'", app_name)
+                except Exception as e:
+                    logger.error("Failed to delete Application '%s': %s", app_name, e)
+
+            # 2. Delete Namespace directly
+            try:
+                k8s.delete_namespace(ns_name)
+                logger.info("Deleted Kubernetes namespace '%s'", ns_name)
+                reaped_count += 1
+            except Exception as e:
+                logger.error("Failed to delete namespace '%s': %s", ns_name, e)
+
+    # Check for stale Tailscale proxy pods whose namespace is already gone
+    active_ns_names = {ns.get("metadata", {}).get("name") for ns in namespaces}
+    stale_proxies = []
+    for pod in proxy_pods:
+        p_name = pod.get("metadata", {}).get("name", "")
+        # Tailscale operator names proxy pods: ts-<ingress-name>-<random>-0
+        # For previews: ts-preview-pr-<N>-app-...
+        m = re.search(r"ts-preview-(pr-\d+)-", p_name)
+        if m:
+            owner_ns = m.group(1)
+            if owner_ns not in active_ns_names:
+                stale_proxies.append(p_name)
+
+    if stale_proxies:
+        logger.warning(
+            "Found %d potentially stale Tailscale proxy pod(s) without active namespace: %s",
+            len(stale_proxies),
+            stale_proxies,
+        )
+    else:
+        logger.info("Checked Tailscale proxy pods: 0 stale proxies found.")
+
+    logger.info(
+        "Reaper cycle completed. Scanned: %d, Candidates: %d, Reaped (or dry-run): %d",
+        scanned_count,
+        len(candidates),
+        reaped_count,
+    )
+
+    return {
+        "scanned": scanned_count,
+        "candidates": len(candidates),
+        "reaped": reaped_count,
+        "stale_proxies": len(stale_proxies),
+    }
+
+
+def main() -> None:
+    github_repo = os.environ.get("GITHUB_REPO", "Dungx2409/pr-preview-platform")
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    ttl_hours = float(os.environ.get("PREVIEW_TTL_HOURS", "24"))
+    dry_run = os.environ.get("DRY_RUN", "true").lower() in ("true", "1", "yes")
+
+    if not github_token:
+        logger.warning(
+            "GITHUB_TOKEN not provided; GitHub API rate limits may be restricted (60 req/hr)"
+        )
+
+    k8s = K8sClient()
+
+    try:
+        summary = reap_cycle(
+            k8s=k8s,
+            github_repo=github_repo,
+            github_token=github_token,
+            ttl_hours=ttl_hours,
+            dry_run=dry_run,
+        )
+        logger.info("Summary: %s", summary)
+    except Exception as e:
+        logger.exception("Reaper execution failed: %s", e)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

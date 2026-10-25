@@ -74,7 +74,7 @@ lint-trivy: ## Scan filesystem and configurations for security issues with Trivy
 .PHONY: test
 test: ## Run unit tests (demo-app and exporter)
 	@echo -e "$(CYAN)→ Running tests...$(RESET)"
-	@if [ -d "demo-app/tests" ] || [ -d "exporter/tests" ]; then \
+	@if [ -d "demo-app/tests" ] || [ -d "exporter/tests" ] || [ -d "reaper/tests" ]; then \
 		python3 -m pytest -v; \
 	else \
 		echo "No unit tests created yet (stub pass for T-0.4)."; \
