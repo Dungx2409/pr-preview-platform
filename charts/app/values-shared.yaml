@@ -15,6 +15,18 @@ ingress:
   className: tailscale
   hostname: shared
 
+# Namespace configuration with Pod Security Standards
+namespace:
+  create: true
+  name: shared
+  podSecurity:
+    enforce: baseline
+    enforceVersion: latest
+    warn: restricted
+    warnVersion: latest
+    audit: restricted
+    auditVersion: latest
+
 # ResourceQuota tuned with higher headroom for shared environment
 resourceQuota:
   enabled: true

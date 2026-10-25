@@ -120,3 +120,8 @@ verify-teardown: ## Check no pr-* leftovers in the cluster
 	else \
 		echo "scripts/verify-teardown.sh not created yet. Skipping until T-4.6."; \
 	fi
+
+.PHONY: verify-security
+verify-security: ## Run comprehensive security & isolation verification suite (T-5.2)
+	@echo -e "$(CYAN)→ Running security verification...$(RESET)"
+	@bash scripts/verify-security.sh
