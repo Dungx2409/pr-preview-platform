@@ -90,9 +90,3 @@ def test_liveness_remains_ok_even_if_db_unreachable(client: TestClient):
     response = client.get("/healthz")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-
-
-def test_deliberate_failure_for_ci_gate():
-    """Verify acceptance criterion: a deliberately broken change fails CI."""
-    assert False, "Deliberate test failure for CI gate rejection verification"
-
