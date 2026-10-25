@@ -6,6 +6,10 @@ metadata:
   labels:
     {{- include "app.labels" . | nindent 4 }}
     app.kubernetes.io/component: namespace
+    {{- if .Values.pr.number }}
+    preview: "true"
+    pr: {{ .Values.pr.number | quote }}
+    {{- end }}
     pod-security.kubernetes.io/enforce: {{ .Values.namespace.podSecurity.enforce | default "baseline" | quote }}
     pod-security.kubernetes.io/enforce-version: {{ .Values.namespace.podSecurity.enforceVersion | default "latest" | quote }}
     pod-security.kubernetes.io/warn: {{ .Values.namespace.podSecurity.warn | default "restricted" | quote }}
