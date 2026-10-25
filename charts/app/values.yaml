@@ -107,6 +107,7 @@ postgres:
       type: RuntimeDefault
   securityContext:
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
     runAsNonRoot: true
     runAsUser: 70
     runAsGroup: 70

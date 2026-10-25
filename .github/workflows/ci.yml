@@ -36,7 +36,7 @@ jobs:
       - name: Install linters
         run: |
           python3 -m pip install --upgrade pip
-          pip install yamllint==1.38.0 ansible-lint==26.10.1
+          pip install yamllint==1.38.0 ansible-lint==26.10.1 ruff==0.11.11
           sudo apt-get update && sudo apt-get install -y shellcheck
           ansible-galaxy collection install -r ansible/requirements.yml
 
@@ -53,6 +53,13 @@ jobs:
           URL="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           curl -sSL "$URL" | tar -xz -C /usr/local/bin kubeconform
           chmod +x /usr/local/bin/kubeconform
+
+      - name: Install trivy
+        run: |
+          TRIVY_VERSION="0.76.1"
+          URL="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSL "$URL" | tar -xz -C /usr/local/bin trivy
+          chmod +x /usr/local/bin/trivy
 
       - name: Install test dependencies
         run: |

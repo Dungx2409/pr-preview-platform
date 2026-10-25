@@ -14,7 +14,7 @@ help: ## Display available make targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(CYAN)%-18s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: lint
-lint: lint-yaml lint-ansible lint-shell lint-secrets lint-helm ## Run all linters (yamllint, ansible-lint, shellcheck, gitleaks, helm lint)
+lint: lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm lint-trivy ## Run all linters (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm, trivy)
 	@echo -e "$(GREEN)✓ All linters passed!$(RESET)"
 
 .PHONY: lint-yaml
@@ -40,6 +40,12 @@ lint-shell: ## Lint shell scripts with shellcheck
 		echo "No shell scripts found. Skipping shellcheck."; \
 	fi
 
+.PHONY: lint-python
+lint-python: ## Lint and check formatting of Python code with ruff
+	@echo -e "$(CYAN)→ Running ruff...$(RESET)"
+	ruff check .
+	ruff format --check .
+
 .PHONY: lint-secrets
 lint-secrets: ## Scan repository for secrets using gitleaks
 	@echo -e "$(CYAN)→ Running gitleaks detect...$(RESET)"
@@ -50,6 +56,19 @@ lint-helm: ## Lint Helm charts
 	@echo -e "$(CYAN)→ Running helm lint...$(RESET)"
 	@if [ -f "charts/app/Chart.yaml" ]; then \
 		helm lint charts/app; \
+	fi
+
+.PHONY: lint-trivy
+lint-trivy: ## Scan filesystem and configurations for security issues with Trivy
+	@echo -e "$(CYAN)→ Running trivy fs & config scan...$(RESET)"
+	@if command -v trivy >/dev/null 2>&1; then \
+		trivy fs --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .; \
+		trivy config --severity CRITICAL,HIGH --exit-code 1 .; \
+	elif command -v docker >/dev/null 2>&1; then \
+		docker run --rm -v $$(pwd):/src -w /src aquasec/trivy:0.76.1 fs --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .; \
+		docker run --rm -v $$(pwd):/src -w /src aquasec/trivy:0.76.1 config --severity CRITICAL,HIGH --exit-code 1 .; \
+	else \
+		echo "Trivy not installed and docker not available. Skipping."; \
 	fi
 
 .PHONY: test

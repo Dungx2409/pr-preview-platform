@@ -1,9 +1,8 @@
 """Unit tests for FastAPI demo app validating SPEC §6.6 requirements."""
 
 import pytest
-from fastapi.testclient import TestClient
-
 from database import init_db
+from fastapi.testclient import TestClient
 
 
 def test_healthz(client: TestClient):
