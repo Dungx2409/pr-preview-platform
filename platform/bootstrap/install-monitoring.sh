@@ -73,6 +73,11 @@ kubectl apply -f "${REPO_ROOT}/platform/monitoring/exporter-configmap.yaml"
 kubectl apply -f "${REPO_ROOT}/platform/monitoring/exporter-deployment.yaml"
 kubectl rollout status deployment/preview-exporter -n "${NAMESPACE}" --timeout=120s
 
+# 6. Deploy Grafana Dashboard and Prometheus Alert Rules (T-6.3, SPEC §6.8)
+echo "==> Deploying Grafana dashboard and Prometheus alert rules..."
+kubectl apply -f "${REPO_ROOT}/platform/monitoring/dashboard-configmap.yaml"
+kubectl apply -f "${REPO_ROOT}/platform/monitoring/alert-rules.yaml"
+
 echo
 echo "==> [Monitoring Bootstrap] Rollout successful!"
 echo "==> Verification details:"

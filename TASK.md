@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 6 — Observability + metrics (T-6.3 Dashboard + alerts)**
+**→ Phase 7 — Docs, demo, CV, team onboarding (T-7.1 DR drill)**
 
 ---
 
@@ -139,7 +139,7 @@
 - [x] **T-6.2** 🤖 **preview-exporter** (Python) — metrics per SPEC §6.8, unit tests, Deployment manifest, ServiceMonitor.
   - *Acceptance:* metrics visible in Prometheus for a live preview.
 
-- [ ] **T-6.3** 🤖 **Dashboard + alerts** — committed JSON; VM memory alert; operator/proxy RAM panel.
+- [x] **T-6.3** 🤖 **Dashboard + alerts** — committed JSON; VM memory alert; operator/proxy RAM panel.
   - *Acceptance:* dashboard shows real data; alert rule validated (promtool or a test fire).
 
 ## Phase 7 — Docs, demo, CV, team onboarding
