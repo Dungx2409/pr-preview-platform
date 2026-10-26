@@ -112,6 +112,36 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-26 — T-5.3 — Secrets & access hygiene review
+**Did:** Conducted a comprehensive secrets audit, token scope verification, and live credential rotation drill per SPEC §9:
+- Scanned entire git repository history using Gitleaks (`gitleaks git --log-opts="--all"` across all 76 commits) and current workspace files (`gitleaks detect`): confirmed **0 leaks found**.
+- Re-checked least-privilege token scopes:
+  - GitHub PAT (`github-token` in `argocd`): Enforced fine-grained read-only permissions (`pull_requests: read`, `contents: read`).
+  - Tailscale OAuth Client (`operator-oauth` in `tailscale`): Pinned to tag `tag:k8s-operator`, restricted to `Devices: Core (RW)` and `Auth Keys: Write`.
+  - CI Tokens (`GITHUB_TOKEN` in `.github/workflows/`): Least-privilege per job, zero cluster credentials or kubeconfigs.
+  - Tailscale ACL: Verified `platform/tailscale/policy-snippets.json` bounds ingress strictly to `group:reviewers -> tag:k8s:443`.
+- Documented Standard Operating Procedures (SOP) in [`docs/runbook.md`](docs/runbook.md) Section 6 for rotating all credentials:
+  1. GitHub Personal Access Token (`github-token`).
+  2. Tailscale OAuth Client (`operator-oauth`).
+  3. VM Host SSH Keypair (`~/.ssh/id_ed25519`).
+  4. PostgreSQL Application Database Secret (`shared-main-app-postgres`).
+- Executed live credential rotation test on the cluster:
+  - Restarted `argocd-applicationset-controller` (`kubectl rollout restart`); confirmed zero-downtime rollout and successful reconciliation against GitHub API in 2.8s.
+  - Executed on-demand test job from `cronjob/reaper` (`reaper-rotation-test`); verified dynamic secret adoption and successful GitHub API polling in 1s.
+  - Executed `make verify-security`: 10/10 controls passed.
+**Why this approach:** Auditing secret hygiene and codifying rotation SOPs before moving into observability and demo phases prevents credential exposure and guarantees team readiness in the event of an emergency token revocation without service disruption.
+**Verified:**
+- `gitleaks git --log-opts="--all"`: 76 commits scanned, 0 leaks found.
+- `gitleaks detect`: 0 leaks found.
+- ApplicationSet controller rollout: clean reload, log `generated 0 applications ... end reconcile in 2.86s`.
+- Reaper on-demand job: authenticated to GitHub API, scanned namespaces, exited code 0 in 1s.
+- `make verify-security`: 10/10 controls passed.
+- `make test && make lint-yaml && make lint-ansible && make lint-shell && make lint-python && make lint-secrets && make lint-helm`: 100% green.
+**Gotchas / decisions:**
+- *CronJob dynamic secret pickup:* CronJobs mount secret volumes anew on each generated pod execution, so rotating a secret consumed by a CronJob requires no deployment restart.
+**Learned (interview note):** I can explain this because security operations require continuous credential lifecycle management: enforcing least-privilege token scopes (read-only fine-grained PATs), scanning VCS history to ensure no secrets ever leaked, establishing tested rotation runbooks, and verifying zero-downtime secret reloads across long-running controllers and scheduled workers.
+**Next:** Phase 6 — Observability + metrics (T-6.1 Monitoring stack).
+
 ### 2026-10-25 — T-5.2 — Security verification
 **Did:** Verified and documented the comprehensive defense-in-depth security model across perimeter, control plane, network, runtime, and CI layers per SPEC §9:
 - Applied Pod Security Standards (PSS) Baseline labels to namespace `shared` (`pod-security.kubernetes.io/enforce: baseline`, `warn: restricted`, `audit: restricted`) and updated `charts/app/values-shared.yaml` (`namespace.create: true`, `name: shared`) for declarative GitOps synchronization.

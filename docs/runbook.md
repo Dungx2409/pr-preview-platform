@@ -212,5 +212,186 @@ KUBECONFIG=~/.kube/pr-preview.yaml kubectl apply -f platform/argocd/project-prev
 KUBECONFIG=~/.kube/pr-preview.yaml kubectl get appproject previews -n argocd
 ```
 
+---
+
+## 6. Credential & Secret Rotation Procedures (SOP)
+
+This section provides Standard Operating Procedures (SOP) for periodic rotation and emergency revocation of all platform credentials per SPEC §9 and TASK T-5.3.
+
+### 6.1 GitHub Personal Access Token (`github-token` in `argocd`)
+
+The `github-token` secret is consumed by two critical GitOps components:
+1. **Argo CD ApplicationSet Controller:** Polls GitHub API (`GET /repos/:owner/:repo/pulls`) to generate preview applications.
+2. **Reaper CronJob:** Polls GitHub API to reconcile active namespaces against open PRs to delete orphans and enforce TTLs.
+
+#### Least-Privilege Scope Requirements:
+- **Fine-Grained Personal Access Token (Recommended):**
+  - **Repository Access:** Selected repositories only (`pr-preview-platform`).
+  - **Permissions:**
+    - `Pull requests`: Read-only.
+    - `Contents`: Read-only.
+- **Prohibited Permissions:** Never grant `Admin`, `Delete repo`, `Workflows`, or any `Write` scopes.
+
+#### Step-by-Step Rotation:
+1. **Generate New Token:**
+   - Go to GitHub -> Settings -> Developer Settings -> Personal Access Tokens -> Fine-grained tokens.
+   - Click **Generate new token**. Set Name: `pr-preview-argocd-reaper-token-<YYYYMMDD>`, Expiration: 90 days.
+   - Select repository: `Dungx2409/pr-preview-platform`.
+   - Set Permissions: `Pull requests: Read-only`, `Contents: Read-only`. Copy the new token.
+
+2. **Update Kubernetes Secret (Zero-Downtime Atomic Replacement):**
+   ```bash
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl create secret generic github-token \
+     --namespace=argocd \
+     --from-literal=token="<NEW_TOKEN>" \
+     --dry-run=client -o yaml | KUBECONFIG=~/.kube/pr-preview.yaml kubectl apply -f -
+   ```
+
+3. **Restart Consumers (Seamless Pick-up):**
+   ```bash
+   # Restart ApplicationSet controller to reload in-memory cache
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl rollout restart deployment argocd-applicationset-controller -n argocd
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl rollout status deployment argocd-applicationset-controller -n argocd
+   ```
+   *Note:* The Reaper CronJob reads the secret fresh on every run (`*/15 * * * *`), so it automatically adopts the new token on its next execution.
+
+4. **Verify Live Operation:**
+   ```bash
+   # Verify ApplicationSet controller is polling GitHub without errors
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl logs -n argocd -l app.kubernetes.io/name=argocd-applicationset-controller --tail=30 | grep -E -i "error|github|reconciliation"
+
+   # Trigger an on-demand Reaper run to verify GitHub API connectivity
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl create job --from=cronjob/reaper reaper-rotation-verify -n argocd
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl wait --for=condition=complete job/reaper-rotation-verify -n argocd --timeout=60s
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl logs -n argocd job/reaper-rotation-verify
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl delete job reaper-rotation-verify -n argocd
+   ```
+
+5. **Revoke Old Token:**
+   - Once verified, return to GitHub Developer Settings and delete/revoke the retired token.
+
+---
+
+### 6.2 Tailscale OAuth Client (`operator-oauth` in `tailscale`)
+
+The Tailscale Operator authenticates to the Tailscale control plane using an OAuth Client Secret to register Ingress proxies and manage tailnet devices.
+
+#### Least-Privilege Scope Requirements:
+- **Client Tags:** Must be explicitly tagged with `tag:k8s-operator`.
+- **Permissions:**
+  - `Devices: Read/Write` (or Core).
+  - `Auth Keys: Write` (required to mint ephemeral auth keys for preview proxy pods).
+- **Prohibited:** Never assign personal tags or broad network routing administrative capabilities outside `tag:k8s-operator`.
+
+#### Step-by-Step Rotation:
+1. **Generate New OAuth Client:**
+   - Go to [Tailscale Admin Console](https://login.tailscale.com/admin/settings/oauth) -> Settings -> OAuth Clients.
+   - Click **Generate OAuth Client**.
+   - Tags: Select `tag:k8s-operator`.
+   - Scopes: Check `Devices (Read/Write)` and `Auth Keys (Write)`.
+   - Copy `Client ID` and `Client Secret`.
+
+2. **Update Kubernetes Secret:**
+   ```bash
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl create secret generic operator-oauth \
+     --namespace=tailscale \
+     --from-literal=client_id="<NEW_CLIENT_ID>" \
+     --from-literal=client_secret="<NEW_CLIENT_SECRET>" \
+     --dry-run=client -o yaml | KUBECONFIG=~/.kube/pr-preview.yaml kubectl apply -f -
+   ```
+
+3. **Restart Operator Deployment:**
+   ```bash
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl rollout restart deployment operator -n tailscale
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl rollout status deployment operator -n tailscale
+   ```
+
+4. **Verify Ingress & Proxy Connectivity:**
+   ```bash
+   # Check operator logs for successful authentication
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl logs -n tailscale -l app.kubernetes.io/name=tailscale-operator --tail=40
+
+   # Verify existing shared endpoint responds with HTTP 200
+   curl -s -i https://shared.taildc1471.ts.net/healthz
+   ```
+
+5. **Revoke Old OAuth Client:**
+   - In Tailscale Admin Console, delete the deprecated OAuth Client.
+
+---
+
+### 6.3 VirtualBox VM Host SSH Keypair (`~/.ssh/id_ed25519`)
+
+Direct administrative access to the `devops-server` VM is restricted to key-only authentication on the private host-only adapter (`192.168.56.10:22`).
+
+#### Step-by-Step Rotation:
+1. **Generate New Ed25519 Keypair on Host:**
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_new -C "devops-server-rotation-$(date +%Y%m%d)"
+   ```
+
+2. **Append New Public Key to VM Authorized Keys:**
+   ```bash
+   # Copy new public key to VM authorized_keys without removing old key
+   cat ~/.ssh/id_ed25519_new.pub | ssh -i ~/.ssh/id_ed25519 vboxuser@192.168.56.10 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+   ```
+
+3. **Verify SSH Access with New Key:**
+   ```bash
+   ssh -i ~/.ssh/id_ed25519_new vboxuser@192.168.56.10 "echo 'New SSH key authenticated successfully'"
+   ```
+
+4. **Retire Old Key:**
+   - Remove the old public key line from `~/.ssh/authorized_keys` inside the VM:
+     ```bash
+     ssh -i ~/.ssh/id_ed25519_new vboxuser@192.168.56.10 "sed -i '/<OLD_KEY_COMMENT>/d' ~/.ssh/authorized_keys"
+     ```
+   - On the host machine, backup and replace the default key:
+     ```bash
+     mv ~/.ssh/id_ed25519 ~/.ssh/id_ed25519_backup
+     mv ~/.ssh/id_ed25519_new ~/.ssh/id_ed25519
+     mv ~/.ssh/id_ed25519_new.pub ~/.ssh/id_ed25519.pub
+     ```
+
+---
+
+### 6.4 Postgres Application Database Secret (`shared-main-app-postgres`)
+
+Database passwords for ephemeral preview environments and the shared environment are decoupled per namespace.
+
+#### Step-by-Step Rotation (Shared Environment):
+1. **Generate New Strong Password:**
+   ```bash
+   NEW_PG_PASS=$(openssl rand -hex 16)
+   ```
+
+2. **Update Database User Password in PostgreSQL:**
+   ```bash
+   PG_POD=$(KUBECONFIG=~/.kube/pr-preview.yaml kubectl get pod -n shared -l app.kubernetes.io/component=database -o jsonpath='{.items[0].metadata.name}')
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl exec -n shared "${PG_POD}" -- psql -U postgres -c "ALTER USER postgres WITH PASSWORD '${NEW_PG_PASS}';"
+   ```
+
+3. **Update Kubernetes Secret:**
+   ```bash
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl create secret generic shared-main-app-postgres \
+     --namespace=shared \
+     --from-literal=POSTGRES_USER=postgres \
+     --from-literal=POSTGRES_PASSWORD="${NEW_PG_PASS}" \
+     --from-literal=POSTGRES_DB=appdb \
+     --dry-run=client -o yaml | KUBECONFIG=~/.kube/pr-preview.yaml kubectl apply -f -
+   ```
+
+4. **Restart App Deployment to Pick Up New Credentials:**
+   ```bash
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl rollout restart deployment shared-main-app -n shared
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl rollout status deployment shared-main-app -n shared
+   ```
+
+5. **Verify Database Healthz:**
+   ```bash
+   curl -s -i https://shared.taildc1471.ts.net/readyz
+   ```
+
+
 
 
