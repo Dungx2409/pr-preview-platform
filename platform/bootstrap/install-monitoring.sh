@@ -66,6 +66,13 @@ helm upgrade --install "${RELEASE_NAME}" "${CHART_SOURCE}" \
   --timeout 10m0s \
   --wait
 
+# 5. Deploy preview-exporter (RBAC, ConfigMap, Deployment, Service, ServiceMonitor)
+echo "==> Deploying preview-exporter..."
+kubectl apply -f "${REPO_ROOT}/platform/monitoring/exporter-rbac.yaml"
+kubectl apply -f "${REPO_ROOT}/platform/monitoring/exporter-configmap.yaml"
+kubectl apply -f "${REPO_ROOT}/platform/monitoring/exporter-deployment.yaml"
+kubectl rollout status deployment/preview-exporter -n "${NAMESPACE}" --timeout=120s
+
 echo
 echo "==> [Monitoring Bootstrap] Rollout successful!"
 echo "==> Verification details:"
@@ -78,3 +85,7 @@ echo
 echo "==> Access Prometheus via local port-forward:"
 echo "    KUBECONFIG=${KUBECONFIG} kubectl port-forward svc/${RELEASE_NAME}-prometheus -n ${NAMESPACE} 9090:9090"
 echo "    URL: http://localhost:9090"
+echo
+echo "==> Access preview-exporter via local port-forward:"
+echo "    KUBECONFIG=${KUBECONFIG} kubectl port-forward svc/preview-exporter -n ${NAMESPACE} 8000:8000"
+echo "    URL: http://localhost:8000/metrics"

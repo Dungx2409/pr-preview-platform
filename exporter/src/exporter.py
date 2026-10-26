@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""PR Preview Platform - Custom Prometheus Exporter (T-6.2, SPEC §6.8).
+
+Exposes metrics about active PR preview environments:
+- preview_active_total: Total active PR preview namespaces
+- preview_age_seconds{pr}: Age of each preview namespace
+- preview_ready_seconds{pr}: Time taken from namespace creation to Deployment Available
+- preview_reaped_total: Counter of reaped previews
+- preview_exporter_scrape_duration_seconds: Internal collection latency
+- preview_exporter_up: Health status of K8s API scraper
+"""
+
+from __future__ import annotations
+
+import http.server
+import json
+import logging
+import os
+import re
+import signal
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("preview-exporter")
+
+PR_NS_PATTERN = re.compile(r"^pr-(\d+)$")
+
+
+def parse_rfc3339(ts_str: str) -> datetime:
+    """Parse an RFC3339 / ISO-8601 UTC timestamp string to datetime."""
+    # Replace Z with +00:00 for python 3.10 fromisoformat compatibility
+    clean_ts = ts_str.replace("Z", "+00:00")
+    dt = datetime.fromisoformat(clean_ts)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+@dataclass
+class PreviewMetrics:
+    """Snapshot of gathered preview environment metrics."""
+
+    active_total: int = 0
+    age_seconds: dict[str, float] = field(default_factory=dict)
+    ready_seconds: dict[str, float] = field(default_factory=dict)
+    reaped_total: int = 0
+    scrape_duration_seconds: float = 0.0
+    scrape_success: bool = True
+
+
+class K8sClient:
+    """Lightweight Kubernetes API client using standard library urllib."""
+
+    def __init__(
+        self,
+        api_server: str = "",
+        token: str = "",
+        ca_file: str = "",
+        timeout: float = 10.0,
+    ) -> None:
+        self.api_server = (
+            api_server
+            or os.environ.get("KUBERNETES_SERVICE_HOST_URL")
+            or "https://kubernetes.default.svc"
+        ).rstrip("/")
+        self.token = token or os.environ.get("K8S_TOKEN", "")
+        self.ca_file = ca_file or os.environ.get("K8S_CA_FILE", "")
+        self.timeout = timeout
+
+        if not self.token and os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token"):
+            try:
+                with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
+                    self.token = f.read().strip()
+            except OSError as err:
+                logger.warning("Could not read in-cluster service account token: %s", err)
+
+        if not self.ca_file and os.path.exists(
+            "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        ):
+            self.ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+        self.ssl_context = ssl.create_default_context()
+        if self.ca_file and os.path.exists(self.ca_file):
+            self.ssl_context.load_verify_locations(cafile=self.ca_file)
+        elif self.api_server.startswith("https://") and not self.ca_file:
+            # Local development fallback if without CA bundle
+            self.ssl_context.check_hostname = False
+            self.ssl_context.verify_mode = ssl.CERT_NONE
+
+    def get(self, path: str) -> dict[str, Any]:
+        """Perform a GET request to the Kubernetes API."""
+        url = f"{self.api_server}{path}"
+        req = urllib.request.Request(url)
+        if self.token:
+            req.add_header("Authorization", f"Bearer {self.token}")
+        req.add_header("Accept", "application/json")
+        req.add_header("User-Agent", "pr-preview-platform-exporter")
+
+        with urllib.request.urlopen(req, timeout=self.timeout, context=self.ssl_context) as resp:
+            data = resp.read().decode("utf-8")
+            return json.loads(data)
+
+
+class PreviewCollector:
+    """Collects preview environment metrics from Kubernetes API."""
+
+    def __init__(self, k8s_client: K8sClient | None = None) -> None:
+        self.client = k8s_client or K8sClient()
+        self.reaped_total = int(os.environ.get("PREVIEW_REAPED_TOTAL", "0"))
+        self._last_metrics = PreviewMetrics()
+
+    def record_reaped(self, count: int = 1) -> None:
+        """Increment the reaped counter."""
+        self.reaped_total += count
+
+    def collect(self, now: datetime | None = None) -> PreviewMetrics:
+        """Query Kubernetes API and compute current metrics."""
+        start_time = time.time()
+        current_dt = now or datetime.now(timezone.utc)
+
+        try:
+            ns_list_resp = self.client.get("/api/v1/namespaces")
+            items = ns_list_resp.get("items", [])
+
+            active_total = 0
+            age_seconds: dict[str, float] = {}
+            ready_seconds: dict[str, float] = {}
+
+            for item in items:
+                metadata = item.get("metadata", {})
+                ns_name = metadata.get("name", "")
+                match = PR_NS_PATTERN.match(ns_name)
+                if not match:
+                    continue
+
+                pr_num = match.group(1)
+                active_total += 1
+
+                # 1. Namespace age
+                creation_ts = metadata.get("creationTimestamp")
+                if creation_ts:
+                    try:
+                        creation_dt = parse_rfc3339(creation_ts)
+                        age = max(0.0, (current_dt - creation_dt).total_seconds())
+                        age_seconds[pr_num] = age
+                    except Exception as err:
+                        logger.warning("Failed to parse creationTimestamp for %s: %s", ns_name, err)
+                        creation_dt = None
+                else:
+                    creation_dt = None
+
+                # 2. Time-to-ready from Deployment Available condition
+                if creation_dt:
+                    try:
+                        dep_path = f"/apis/apps/v1/namespaces/{ns_name}/deployments"
+                        dep_resp = self.client.get(dep_path)
+                        dep_items = dep_resp.get("items", [])
+                        ready_time = self._extract_ready_duration(dep_items, creation_dt)
+                        if ready_time is not None:
+                            ready_seconds[pr_num] = ready_time
+                    except Exception as err:
+                        logger.warning("Failed to fetch deployments for %s: %s", ns_name, err)
+
+            # Check ConfigMap for reaped total updates if available
+            self._sync_reaped_from_configmap()
+
+            scrape_duration = max(0.0001, time.time() - start_time)
+            metrics = PreviewMetrics(
+                active_total=active_total,
+                age_seconds=age_seconds,
+                ready_seconds=ready_seconds,
+                reaped_total=self.reaped_total,
+                scrape_duration_seconds=scrape_duration,
+                scrape_success=True,
+            )
+            self._last_metrics = metrics
+            return metrics
+
+        except Exception as err:
+            logger.error("Scrape failed: %s", err)
+            scrape_duration = max(0.0001, time.time() - start_time)
+            # Retain cached counts if API is temporarily unavailable
+            return PreviewMetrics(
+                active_total=self._last_metrics.active_total,
+                age_seconds=self._last_metrics.age_seconds,
+                ready_seconds=self._last_metrics.ready_seconds,
+                reaped_total=self.reaped_total,
+                scrape_duration_seconds=scrape_duration,
+                scrape_success=False,
+            )
+
+    def _sync_reaped_from_configmap(self) -> None:
+        """Optionally sync reaped counter from monitoring/preview-exporter-stats ConfigMap."""
+        try:
+            cm = self.client.get("/api/v1/namespaces/monitoring/configmaps/preview-exporter-stats")
+            data = cm.get("data", {})
+            if "reaped_total" in data:
+                self.reaped_total = int(data["reaped_total"])
+        except Exception:
+            # ConfigMap is optional, ignore 404 or missing permissions
+            pass
+
+    @staticmethod
+    def _extract_ready_duration(
+        deployments: list[dict[str, Any]], creation_dt: datetime
+    ) -> float | None:
+        """Find the main app deployment and calculate time to reach Available status."""
+        for dep in deployments:
+            labels = dep.get("metadata", {}).get("labels", {})
+            dep_name = dep.get("metadata", {}).get("name", "")
+            # Look for app component or primary deployment
+            is_app = labels.get("app.kubernetes.io/component") == "app" or dep_name.endswith("-app")
+            if not is_app and len(deployments) > 1:
+                continue
+
+            status = dep.get("status", {})
+            conditions = status.get("conditions", [])
+            for cond in conditions:
+                if cond.get("type") == "Available" and cond.get("status") == "True":
+                    transition_ts = cond.get("lastTransitionTime")
+                    if transition_ts:
+                        transition_dt = parse_rfc3339(transition_ts)
+                        ready_sec = max(0.0, (transition_dt - creation_dt).total_seconds())
+                        return ready_sec
+        return None
+
+
+def format_prometheus(metrics: PreviewMetrics) -> str:
+    """Render PreviewMetrics in standard Prometheus text exposition format (version 0.0.4)."""
+    lines: list[str] = [
+        "# HELP preview_active_total Total number of active PR preview environments",
+        "# TYPE preview_active_total gauge",
+        f"preview_active_total {metrics.active_total}",
+        "",
+        "# HELP preview_age_seconds Age of active preview environment in seconds",
+        "# TYPE preview_age_seconds gauge",
+    ]
+
+    for pr, age in sorted(metrics.age_seconds.items(), key=lambda x: int(x[0])):
+        lines.append(f'preview_age_seconds{{pr="{pr}"}} {age:.1f}')
+
+    lines.extend(
+        [
+            "",
+            "# HELP preview_ready_seconds Time in seconds for preview to become available",
+            "# TYPE preview_ready_seconds gauge",
+        ]
+    )
+
+    for pr, ready in sorted(metrics.ready_seconds.items(), key=lambda x: int(x[0])):
+        lines.append(f'preview_ready_seconds{{pr="{pr}"}} {ready:.1f}')
+
+    lines.extend(
+        [
+            "",
+            "# HELP preview_reaped_total Total number of preview environments reaped",
+            "# TYPE preview_reaped_total counter",
+            f"preview_reaped_total {metrics.reaped_total}",
+            "",
+            "# HELP preview_exporter_scrape_duration_seconds Time taken to scrape Kubernetes API",
+            "# TYPE preview_exporter_scrape_duration_seconds gauge",
+            f"preview_exporter_scrape_duration_seconds {metrics.scrape_duration_seconds:.6f}",
+            "",
+            "# HELP preview_exporter_up Whether the last scrape of Kubernetes API succeeded",
+            "# TYPE preview_exporter_up gauge",
+            f"preview_exporter_up {1 if metrics.scrape_success else 0}",
+            "",
+        ]
+    )
+
+    return "\n".join(lines)
+
+
+class ExporterHandler(http.server.BaseHTTPRequestHandler):
+    """HTTP Request Handler exposing /metrics and /healthz."""
+
+    collector: PreviewCollector | None = None
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == "/metrics":
+            if self.collector is None:
+                self.send_error(500, "Collector not initialized")
+                return
+
+            metrics = self.collector.collect()
+            payload = format_prometheus(metrics).encode("utf-8")
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        elif self.path in ("/healthz", "/health"):
+            body = json.dumps({"status": "ok"}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        else:
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Not Found\n")
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+        """Custom log format suppressing high-frequency /metrics log spam."""
+        if "/metrics" in args[0] if args else False:
+            return
+        logger.info("%s - %s", self.client_address[0], format % args)
+
+
+def run_server(port: int = 8000, collector: PreviewCollector | None = None) -> None:
+    """Run the exporter HTTP server until interrupted."""
+    collector = collector or PreviewCollector()
+    ExporterHandler.collector = collector
+
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", port), ExporterHandler)
+    logger.info("Starting PR Preview Platform Exporter on port %d...", port)
+
+    def shutdown_handler(signum: int, frame: Any) -> None:
+        logger.info("Received signal %d, shutting down exporter...", signum)
+        server.shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    port_env = int(os.environ.get("EXPORTER_PORT", "8000"))
+    run_server(port=port_env)
