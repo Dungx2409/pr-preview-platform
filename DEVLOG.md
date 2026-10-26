@@ -145,7 +145,7 @@
 **Verified:**
 - `platform/bootstrap/install-monitoring.sh`: Exited code 0, release `kube-prometheus-stack` deployed.
 - Grafana API health: `curl http://10.43.151.14/api/health` -> HTTP 200 `{"database":"ok","version":"13.2.4"}`.
-- Grafana authenticated datasources: `curl -u admin:admin http://10.43.151.14/api/datasources` -> verified Prometheus (`http://kube-prometheus-stack-prometheus.monitoring:9090/`) and Alertmanager datasources provisioned.
+- Grafana authenticated datasources: `curl -u <admin_user>:<admin_password> http://10.43.151.14/api/datasources` -> verified Prometheus (`http://kube-prometheus-stack-prometheus.monitoring:9090/`) and Alertmanager datasources provisioned.
 - Prometheus readiness & targets: `curl http://10.42.0.198:9090/-/ready` -> HTTP 200 `Prometheus Server is Ready.`; all active targets (`node-exporter`, `kube-state-metrics`, `apiserver`, `coredns`, `kubelet`, `alertmanager`, `prometheus`) reporting `health: "up"`.
 - Host port-forward: Tested Grafana on `localhost:3300` (HTTP 200) and Prometheus on `localhost:9990` (HTTP 200).
 - Metrics queries: `node_memory_MemAvailable_bytes` -> 4 000 063 488 bytes; `container_memory_working_set_bytes` returning live pod usage.
