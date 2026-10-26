@@ -1,0 +1,48 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: preview-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: preview-exporter
+    app.kubernetes.io/part-of: pr-preview-platform
+    app.kubernetes.io/component: observability
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: preview-exporter
+  labels:
+    app.kubernetes.io/name: preview-exporter
+    app.kubernetes.io/part-of: pr-preview-platform
+    app.kubernetes.io/component: observability
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: preview-exporter
+  labels:
+    app.kubernetes.io/name: preview-exporter
+    app.kubernetes.io/part-of: pr-preview-platform
+    app.kubernetes.io/component: observability
+subjects:
+  - kind: ServiceAccount
+    name: preview-exporter
+    namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: preview-exporter

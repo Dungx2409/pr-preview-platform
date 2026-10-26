@@ -119,6 +119,44 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-26 — T-6.2 — preview-exporter (Python)
+**Did:** Built, tested, and deployed `preview-exporter`, a custom in-cluster Prometheus exporter exposing PR preview lifecycle metrics per SPEC §6.8:
+- Created [`exporter/src/exporter.py`](exporter/src/exporter.py):
+  - Lightweight Python service built purely on the Python standard library (`http.server`, `urllib.request`, `json`, `datetime`), requiring zero pip dependencies or binary modules.
+  - Queries Kubernetes API using in-cluster ServiceAccount credentials.
+  - Exposes standard Prometheus text exposition format (v0.0.4) on port 8000:
+    - `preview_active_total`: Gauge tracking total active `pr-*` namespaces.
+    - `preview_age_seconds{pr="<pr>"}`: Gauge tracking lifetime of each preview environment (`now - creationTimestamp`).
+    - `preview_ready_seconds{pr="<pr>"}`: Gauge tracking time-to-ready (`Deployment Available transition - namespace creationTimestamp`).
+    - `preview_reaped_total`: Counter tracking total previews reaped (supports sync from ConfigMap).
+    - `preview_exporter_scrape_duration_seconds`: Gauge measuring collection latency (~12–18 ms).
+    - `preview_exporter_up`: Gauge tracking Kubernetes API scraper health (1 for success, 0 on failure).
+  - Health check endpoint `/healthz` returning HTTP 200 for liveness/readiness probes.
+- Created [`exporter/tests/test_exporter.py`](exporter/tests/test_exporter.py): 6 unit tests with pytest covering RFC3339 parsing, Prometheus exposition rendering, active namespace detection, deployment condition checking, API failure fallbacks, and ConfigMap counter synchronization.
+- Created Kubernetes deployment manifests in `platform/monitoring/`:
+  - [`exporter-rbac.yaml`](platform/monitoring/exporter-rbac.yaml): ServiceAccount, ClusterRole (`namespaces`, `deployments`, `configmaps`), and ClusterRoleBinding.
+  - [`exporter-configmap.yaml`](platform/monitoring/exporter-configmap.yaml): ConfigMap mounting `exporter.py`.
+  - [`exporter-deployment.yaml`](platform/monitoring/exporter-deployment.yaml): Hardened Deployment (`python:3.10-slim`, `runAsUser: 10001`, `readOnlyRootFilesystem: true`, `drop: ALL`), Service, and `ServiceMonitor` (`release: kube-prometheus-stack`).
+- Updated [`platform/bootstrap/install-monitoring.sh`](platform/bootstrap/install-monitoring.sh) to automatically apply exporter manifests and wait for deployment rollout.
+**Why this approach:** Implementing the exporter with Python standard library avoids dependency bloat, security vulnerabilities, and package drift. Running it as a ConfigMap mount atop the pre-cached `python:3.10-slim` container eliminates custom container image registry pushes and enables sub-second pod startups (< 20 MiB RAM consumption). The `ServiceMonitor` CRD integrates natively with the Prometheus Operator deployed in T-6.1 for declarative target auto-discovery.
+**Verified:**
+- Unit tests: 6/6 exporter unit tests passed (`pytest exporter/tests/test_exporter.py`); total test suite 18/18 tests passed (`make test`).
+- Live cluster deployment: `preview-exporter` rolled out cleanly (1/1 Running in namespace `monitoring`).
+- End-to-end verification with live preview:
+  - Created test preview namespace `pr-999` with active app deployment.
+  - Exporter emitted live metrics: `preview_active_total 1`, `preview_ready_seconds{pr="999"} 6.0`, `preview_age_seconds{pr="999"} 11.7`.
+  - Verified Prometheus target `preview-exporter` reported `health: up` at `10.42.0.207:8000`.
+  - Queried Prometheus PromQL API: `curl /api/v1/query?query=preview_ready_seconds` returned `{pr="999", value: "6"}`.
+  - Cleaned up `pr-999`: exporter immediately reflected `preview_active_total 0`.
+- Linters & security: `make lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm`, `make verify-security` (10/10 passed), `trivy config` (0 misconfigurations across all manifests).
+**Gotchas / decisions:**
+- In ClusterRoleBinding, `roleRef.apiGroup` must be `rbac.authorization.k8s.io` without api version suffix (`/v1`).
+- Exporter module name in `exporter/src/` must be distinct (e.g. `exporter.py` instead of `main.py`) to prevent module shadowing against `demo-app/src/main.py` when both directories are in pytest `pythonpath`.
+**Learned (interview note):**
+- Custom Prometheus exporters only need to implement a simple HTTP server returning text matching the OpenMetrics / Prometheus exposition format (`# HELP`, `# TYPE`, key-value lines with optional labels).
+- In Kubernetes, `time-to-ready` for an environment can be accurately and non-intrusively computed by comparing the namespace `metadata.creationTimestamp` with the app Deployment's `status.conditions[?(@.type=="Available")].lastTransitionTime`, avoiding the need for brittle external polling agents.
+**Next:** T-6.3 — Create Grafana dashboard JSON (active previews, time-to-ready p50/p95, CPU/RAM per `pr-*`, VM memory pressure) and alert rules.
+
 ### 2026-10-26 — T-6.1 — Monitoring stack (kube-prometheus-stack)
 **Did:** Deployed and verified a lean, production-grade observability foundation in namespace `monitoring` using pinned `kube-prometheus-stack` (v92.11.0 / appVersion v0.94.1) per SPEC §6.8:
 - Created [`platform/monitoring/values.yaml`](platform/monitoring/values.yaml):
