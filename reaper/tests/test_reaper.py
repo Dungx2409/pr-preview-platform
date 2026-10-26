@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 from reaper import K8sClient, get_open_preview_prs, parse_rfc3339, reap_cycle
@@ -40,12 +40,13 @@ def test_get_open_preview_prs() -> None:
 
 
 def test_reap_cycle_dry_run_orphan() -> None:
+    recent_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     mock_k8s = MagicMock(spec=K8sClient)
     # Cluster has pr-10 (valid open PR) and pr-99 (closed/orphan PR)
     mock_k8s.list_namespaces.return_value = [
         {"metadata": {"name": "default"}},
-        {"metadata": {"name": "pr-10", "creationTimestamp": "2026-10-25T05:00:00Z"}},
-        {"metadata": {"name": "pr-99", "creationTimestamp": "2026-10-25T04:00:00Z"}},
+        {"metadata": {"name": "pr-10", "creationTimestamp": recent_ts}},
+        {"metadata": {"name": "pr-99", "creationTimestamp": recent_ts}},
     ]
     mock_k8s.list_argo_applications.return_value = [
         {"metadata": {"name": "preview-pr-10"}},
@@ -71,9 +72,10 @@ def test_reap_cycle_dry_run_orphan() -> None:
 
 
 def test_reap_cycle_active_delete_orphan() -> None:
+    recent_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     mock_k8s = MagicMock(spec=K8sClient)
     mock_k8s.list_namespaces.return_value = [
-        {"metadata": {"name": "pr-99", "creationTimestamp": "2026-10-25T04:00:00Z"}},
+        {"metadata": {"name": "pr-99", "creationTimestamp": recent_ts}},
     ]
     mock_k8s.list_argo_applications.return_value = [
         {"metadata": {"name": "preview-pr-99"}},
@@ -98,10 +100,11 @@ def test_reap_cycle_active_delete_orphan() -> None:
 
 
 def test_reap_cycle_ttl_expired() -> None:
+    expired_ts = (datetime.now(timezone.utc) - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%SZ")
     mock_k8s = MagicMock(spec=K8sClient)
     # PR 10 is open, but created 48 hours ago (TTL is 24h)
     mock_k8s.list_namespaces.return_value = [
-        {"metadata": {"name": "pr-10", "creationTimestamp": "2026-10-20T00:00:00Z"}},
+        {"metadata": {"name": "pr-10", "creationTimestamp": expired_ts}},
     ]
     mock_k8s.list_argo_applications.return_value = []
     mock_k8s.list_tailscale_proxy_pods.return_value = []
@@ -121,9 +124,10 @@ def test_reap_cycle_ttl_expired() -> None:
 
 
 def test_reap_cycle_stale_tailscale_proxy() -> None:
+    recent_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     mock_k8s = MagicMock(spec=K8sClient)
     mock_k8s.list_namespaces.return_value = [
-        {"metadata": {"name": "pr-10", "creationTimestamp": "2026-10-25T05:00:00Z"}},
+        {"metadata": {"name": "pr-10", "creationTimestamp": recent_ts}},
     ]
     mock_k8s.list_argo_applications.return_value = []
     # Proxy pod for pr-88 exists even though namespace pr-88 is completely gone
