@@ -40,7 +40,9 @@
 | Subsequent request latency (HTTP/2 TLS) | ≤ 100 ms | **44.2 ms** (DNS: 1.5ms, Conn: 2.7ms, TLS: 42.8ms) | 2026-10-23 | `curl -w` over Tailscale mesh (T-2.0) |
 | Tagged resources đang dùng (Tailscale free plan cap = 50) | < 50 | **5–6 nodes** | 2026-10-23 | Tailscale admin console / status during 5-ingress test (T-2.0) |
 | Phút ephemeral đã dùng/tháng (free plan cap = 1 000 min) | < 1 000 | **0 min** (proxies are stateful tagged nodes) | 2026-10-23 | Tailscale admin console (T-2.0) |
-| Số preview đồng thời tối đa trên VM (fit RAM/CPU) | ≥ 5 | **≥ 10** (mỗi proxy pod chỉ tốn ~16.5 MiB) | 2026-10-23 | Extrapolated from 5-ingress spike memory footprint (T-2.0) |
+| Số preview đồng thời tối đa trên VM (fit RAM/CPU) | ≥ 5 | **≥ 18** (3.8 GB free headroom / ~150 MiB request per preview environment, with 1 GB safety buffer) | 2026-10-26 | Extrapolated from available memory post-monitoring (T-6.1) |
+| VM RAM used post-monitoring (full stack) | ≥ 20 % free | **51.3 % free** (3 805 / 7 424 MB available, 3 618 MB used) | 2026-10-26 | `free -m` on VM post-kube-prometheus-stack (T-6.1) |
+| RAM Monitoring stack (6 components) | ≤ 1 500 MiB | **~869 MiB** (Prometheus 396Mi, Grafana 397Mi [3 containers], Alertmanager 23Mi, KSM 22Mi, Operator 22Mi, Node-exporter 9Mi) | 2026-10-26 | `kubectl top pod -n monitoring` (T-6.1) |
 | Tier 1: Git merge → new image visible at shared URL | ≤ 3 min | **66 s** | 2026-10-23 | Stopwatch from GitHub PR merge (#18) to `curl https://shared.taildc1471.ts.net/` returning new SHA `a55dfe6` (T-3.5) |
 
 ## Gotchas (lasting lessons — symptom → cause → fix)
@@ -80,6 +82,11 @@
    - *Cause:* Passing `-F required_contexts='[]'` sends a string `'[]'` rather than a raw JSON array. Additionally, using `<<EOF` with indentation inside YAML `run: |` blocks causes YAML block indentation issues when unindented, or bash parsing errors when indented.
    - *Fix:* Format the JSON payload cleanly via `printf '{"ref":"%s",...}' ...` and pipe directly into `gh api ... --input -`.
 
+8. **Node-exporter DaemonSet requires PSS privileged namespace:**
+   - *Symptom:* `node-exporter` pods rejected with `Error creating: pods "..." is forbidden: violates PodSecurity "baseline:latest": host namespaces (hostNetwork=true, hostPID=true), hostPath volumes (volumes "proc", "sys", "root"), hostPort (container "node-exporter" uses hostPort 9100)`.
+   - *Cause:* `node-exporter` must mount `/proc`, `/sys`, and `/` from the host OS and use host networking/PID to gather kernel and hardware metrics. Enforcing Kubernetes Pod Security Standards (PSS) `baseline` or `restricted` rejects these necessary privileges.
+   - *Fix:* Enforce `pod-security.kubernetes.io/enforce=privileged` on namespace `monitoring` (with `warn=baseline`, `audit=baseline`), while keeping application and preview namespaces strictly at `enforce=baseline`.
+
 ## Open questions / blockers
 
 | # | Question | Owner | Status |
@@ -111,6 +118,44 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-26 — T-6.1 — Monitoring stack (kube-prometheus-stack)
+**Did:** Deployed and verified a lean, production-grade observability foundation in namespace `monitoring` using pinned `kube-prometheus-stack` (v92.11.0 / appVersion v0.94.1) per SPEC §6.8:
+- Created [`platform/monitoring/values.yaml`](platform/monitoring/values.yaml):
+  - Lean retention & storage: 48h / 2GiB retention for Prometheus, 24h for Alertmanager; local-path persistent PVCs (Prometheus 5Gi, Grafana 2Gi, Alertmanager 1Gi).
+  - 30s scrape & evaluation intervals.
+  - Resource requests & limits: Prometheus (50m/256Mi req, 500m/768Mi limit), Grafana (20m/64Mi req, 200m/256Mi limit), Alertmanager (10m/32Mi req, 100m/128Mi limit), Node-exporter (10m/16Mi req, 100m/64Mi limit), Kube-state-metrics (10m/32Mi req, 100m/128Mi limit).
+  - k3s compatibility: disabled unmanaged upstream control plane scrapers (`kubeControllerManager`, `kubeScheduler`, `kubeEtcd`, `kubeProxy`) to eliminate scrape noise.
+  - Access control: ClusterIP services only (zero public Ingress), accessible via `kubectl port-forward` or owner-only access. Default Grafana credentials configured (`admin`/`admin`).
+- Created [`platform/bootstrap/install-monitoring.sh`](platform/bootstrap/install-monitoring.sh): Automated installer ensuring PSS `privileged` on namespace `monitoring` (required by `node-exporter` hostPath/hostNetwork), resolving cached Helm chart, and verifying rollouts idempotently.
+- Verified all 6 core components reached healthy running states:
+  - `alertmanager-kube-prometheus-stack-alertmanager-0` (2/2 Running)
+  - `kube-prometheus-stack-grafana` (3/3 Running)
+  - `kube-prometheus-stack-kube-state-metrics` (1/1 Running)
+  - `kube-prometheus-stack-operator` (1/1 Running)
+  - `kube-prometheus-stack-prometheus-node-exporter` (1/1 Running)
+  - `prometheus-kube-prometheus-stack-prometheus-0` (2/2 Running)
+- Measured VM memory headroom and concurrent preview capacity:
+  - Total VM RAM: 7 424 MB (7.3 GiB).
+  - Used RAM: 3 618 MB (48.7%).
+  - Available RAM headroom: **3 805 MB (51.3% free)**.
+  - Monitoring stack footprint: **~869 MiB** total across 6 components.
+  - Concurrent preview environment capacity: **≥ 18 concurrent previews** (~150 MiB request per preview environment, with 1 GiB safety buffer).
+**Why this approach:** Using the standard Prometheus Operator Helm chart provides Kubernetes-native Custom Resource Definitions (`ServiceMonitor`, `PodMonitor`, `PrometheusRule`), which allows downstream components (such as our custom `preview-exporter` in T-6.2) to dynamically configure scraping via simple declarative manifests without restarting or editing Prometheus server configuration. Lean retention and resource caps prevent the monitoring stack from starving preview workloads on a single-node host.
+**Verified:**
+- `platform/bootstrap/install-monitoring.sh`: Exited code 0, release `kube-prometheus-stack` deployed.
+- Grafana API health: `curl http://10.43.151.14/api/health` -> HTTP 200 `{"database":"ok","version":"13.2.4"}`.
+- Grafana authenticated datasources: `curl -u admin:admin http://10.43.151.14/api/datasources` -> verified Prometheus (`http://kube-prometheus-stack-prometheus.monitoring:9090/`) and Alertmanager datasources provisioned.
+- Prometheus readiness & targets: `curl http://10.42.0.198:9090/-/ready` -> HTTP 200 `Prometheus Server is Ready.`; all active targets (`node-exporter`, `kube-state-metrics`, `apiserver`, `coredns`, `kubelet`, `alertmanager`, `prometheus`) reporting `health: "up"`.
+- Host port-forward: Tested Grafana on `localhost:3300` (HTTP 200) and Prometheus on `localhost:9990` (HTTP 200).
+- Metrics queries: `node_memory_MemAvailable_bytes` -> 4 000 063 488 bytes; `container_memory_working_set_bytes` returning live pod usage.
+- Linters & tests: `make lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm`, `make test` (12/12 passed), `make verify-security` (10/10 passed), and `docker run trivy config` (17/17 clean).
+**Gotchas / decisions:**
+- Namespace `monitoring` requires `pod-security.kubernetes.io/enforce=privileged` because `node-exporter` mounts `/proc`, `/sys`, `/` and uses `hostNetwork`/`hostPID`. Application and preview namespaces remain strictly enforced at `baseline`.
+**Learned (interview note):**
+- In Kubernetes monitoring, Prometheus Operator uses declarative CRDs (`ServiceMonitor`) to scrape applications based on label selectors, decoupling application teams from Prometheus configuration.
+- To safely run node-level exporters in a hardened cluster enforcing Pod Security Standards (PSS), the cluster uses namespace-level privilege isolation: workload namespaces enforce `baseline` to prevent container escapes, while dedicated system/monitoring namespaces are granted `privileged` admission solely for hardware telemetry collection.
+**Next:** T-6.2 — Implement `preview-exporter` (Python) to expose PR preview lifecycle metrics and wire a `ServiceMonitor`.
 
 ### 2026-10-26 — T-5.3 — Secrets & access hygiene review
 **Did:** Conducted a comprehensive secrets audit, token scope verification, and live credential rotation drill per SPEC §9:
