@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 7 — Docs, demo, CV, team onboarding (T-7.1 DR drill)**
+**→ Phase 7 — Docs, demo, CV, team onboarding (T-7.2 Docs)**
 
 ---
 
@@ -144,7 +144,7 @@
 
 ## Phase 7 — Docs, demo, CV, team onboarding
 
-- [ ] **T-7.1** 🤝 **DR drill** — restore the base snapshot (or recreate the VM), run Ansible + bootstrap from the runbook; stopwatch the total.
+- [x] **T-7.1** 🤝 **DR drill** — restore the base snapshot (or recreate the VM), run Ansible + bootstrap from the runbook; stopwatch the total.
   - *Acceptance:* rebuild time in DEVLOG Metrics; runbook gaps fixed.
 
 - [ ] **T-7.2** 🤖 **Docs** — README (problem, diagram, quickstart, results, limitations incl. "host PC must be on", Tailscale limits), `architecture.md`, `runbook.md`, `security.md`, `decisions.md`.

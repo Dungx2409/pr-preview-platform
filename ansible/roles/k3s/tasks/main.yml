@@ -35,19 +35,11 @@
   changed_when: false
   check_mode: false
 
-- name: Check if kubeconfig already exists on host
-  ansible.builtin.stat:
-    path: "{{ kubeconfig_local_path }}"
-  delegate_to: localhost
-  become: false
-  register: k3s_local_kubeconfig
-
 - name: Fetch kubeconfig to host (stored OUTSIDE the repo — see SPEC §6.2)
   ansible.builtin.fetch:
     src: /etc/rancher/k3s/k3s.yaml
     dest: "{{ kubeconfig_local_path }}"
     flat: true
-  when: not k3s_local_kubeconfig.stat.exists
 
 - name: Fix server address in kubeconfig (127.0.0.1 → host-only VM IP)
   ansible.builtin.replace:
@@ -56,4 +48,3 @@
     replace: "https://{{ k3s_node_ip }}:6443"
   delegate_to: localhost
   become: false
-  when: not k3s_local_kubeconfig.stat.exists

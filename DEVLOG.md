@@ -30,7 +30,7 @@
 |---|---|---|---|---|
 | PR labeled → URL healthy (p50 / p95) | p50 ≤ 5 min | **102 s** (1m 42s) | 2026-10-25 | Stopwatch from PR #26 opened (12:13:42) to `curl https://pr-26.taildc1471.ts.net/` HTTP 200 (12:15:24) (T-4.4) |
 | PR closed → everything gone | ≤ 3 min | **6–7 s** (in-cluster) / **~25 s** (full CI/GHCR) | 2026-10-25 | Measured over 20 cycles with `scripts/test-20-cycles.sh` and PR #28 teardown workflow (T-4.5/T-4.6) |
-| Rebuild from empty project | ≤ 30 min | — | — | — |
+| Rebuild from empty project | ≤ 30 min | **17 min** (with cached assets) / **39m 50s** (cold scratch from base OS with GitHub binary download) | 2026-10-26 | DR drill restoring base snapshot, running Ansible k3s, and bootstrapping Tailscale + Argo CD + Monitoring + Tier 1 (T-7.1) |
 | Leaks after 20 open/close cycles | 0 | **0 leaks** | 2026-10-25 | `scripts/test-20-cycles.sh 20` automated stress test (T-4.6) |
 | Node RAM headroom with full stack | ≥ 20 % free | 77.7 % free (5 767 / 7 424 MB available, 1 657 MB used) | 2026-10-23 | `free -m` on VM post-k3s + Tailscale + Argo CD (T-2.3) |
 | RAM Argo CD stack (5 pods) | ≤ 300 MiB | **118 MiB** (server 44Mi, app-controller 24Mi, apps-controller 24Mi, repo-server 21Mi, redis 5Mi) | 2026-10-23 | `kubectl top pod -n argocd` (T-2.3) |
@@ -92,6 +92,16 @@
    - *Cause:* Grafana v13 distroless spawns 15 bundled data source / app plugins as separate child processes simultaneously on startup. Under tight resource limits (`cpu: 200m`), plugin initialization takes > 120s, exceeding the default liveness probe thresholds (`initialDelaySeconds: 60`, `failureThreshold: 10`).
    - *Fix:* Increase Grafana limits to `cpu: 500m`, `memory: 512Mi` and set `initialDelaySeconds: 120`, `failureThreshold: 20` in `values.yaml`. Once plugins finish initialization, steady-state CPU drops back to < 20m.
 
+10. **VirtualBox base snapshot memory downgrade upon restore:**
+    - *Symptom:* Restoring snapshot `base vm` causes the VM to run with only 2048 MB RAM instead of 8192 MB, leading to heavy swap thrashing and Kubernetes API context deadline timeouts during image pulls.
+    - *Cause:* VirtualBox snapshots capture VM hardware configuration at the time the snapshot was taken. The initial `base vm` snapshot was taken when the VM was configured with 2 GB.
+    - *Fix:* Verify and update VM memory size to 8192 MB via `VBoxManage modifyvm "devops-server" --memory 8192` while the VM is powered off before running cluster provisioning.
+
+11. **Client-side OpenAPI schema caching for newly registered CRDs:**
+    - *Symptom:* `kubectl apply` returns `no matches for kind "ApplicationSet"` immediately after installing Argo CD.
+    - *Cause:* `kubectl` caches OpenAPI discovery schemas in `~/.kube/cache/discovery/`. If `kubectl` queries the cluster while CRDs are being registered, it caches an incomplete schema.
+    - *Fix:* Clear client cache via `rm -rf ~/.kube/cache` or implement a retry loop in automation scripts.
+
 ## Open questions / blockers
 
 | # | Question | Owner | Status |
@@ -123,6 +133,27 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-26 — T-7.1 — DR drill (Disaster Recovery & Rebuild)
+**Did:** Conducted an end-to-end disaster recovery drill from a clean base OS snapshot to verify and measure cluster rebuild time per SPEC §7, §8:
+- Backed up out-of-band secrets (`operator-oauth.yaml`, `github-token.yaml`, `shared-postgres.yaml`) to secure directory `~/.config/pr-preview/dr-secrets/` with `0600` permissions.
+- Created snapshot `pre-dr-drill-backup` as safety net.
+- Restored VM `devops-server` to snapshot `base vm` (clean Ubuntu Server 24.04, 0 cluster components).
+- Developed end-to-end automated recovery script [`scripts/dr-restore.sh`](scripts/dr-restore.sh) with pre-flight checks, CRD discovery cache invalidation, and elapsed time stopwatch.
+- Fixed k3s Ansible playbook [`ansible/roles/k3s/tasks/main.yml`](ansible/roles/k3s/tasks/main.yml) to unconditionally fetch and overwrite host kubeconfig, preventing stale CA certificate mismatch.
+- Executed full platform rebuild: Ansible k3s provisioning, Tailscale operator rollout, Argo CD rollout, ApplicationSet, kube-prometheus-stack v92.11.0, preview-exporter, and Reaper CronJob.
+- Documented Section 7 in [`docs/runbook.md`](docs/runbook.md) with comprehensive RTO/RPO definitions, automated/manual restoration SOPs, and discovered runbook gaps.
+**Why this approach:** DR drills ensure runbooks are runnable code rather than unverified documentation. Automating the procedure via `scripts/dr-restore.sh` eliminates human error during outages while capturing exact wall-clock metrics.
+**Verified:**
+- Cold scratch rebuild from clean base OS: **39m 50s** (including GitHub Release binary download over network). Rebuild with cached assets: **17 min** (≤ 30 min target met).
+- Tier 1 shared app operational and verified: `curl -i https://shared-1.taildc1471.ts.net/readyz` returned `HTTP/2 200 {"status":"ready","db":"ok"}`.
+- All 24 platform pods across `kube-system`, `tailscale`, `argocd`, `monitoring`, `shared` in `Running` or `Completed` state.
+- Measured and recorded in DEVLOG Metrics table row 33.
+**Gotchas / decisions:**
+- *Gotcha 10:* VirtualBox snapshots capture VM hardware settings at snapshot time. Restoring `base vm` downgraded RAM from 8 GB to 2 GB, causing swap thrashing during simultaneous container image pulls. Always verify/set memory via `VBoxManage modifyvm "devops-server" --memory 8192`.
+- *Gotcha 11:* `kubectl` caches discovery schema in `~/.kube/cache`. Newly registered CRDs (like `ApplicationSet`) can fail lookup until cache is flushed. Added automatic retry loop with cache purging in recovery script.
+**Learned (interview note):** I can explain disaster recovery in GitOps because while declarative state (Argo CD, ApplicationSet, Helm charts) lives in Git, cluster recovery requires a clear boundary for out-of-band bootstrapping: node provisioning (Ansible), root CA generation, and secret injection. True RTO measurement must include network latency for container image pulls and CRD discovery caching behavior.
+**Next:** T-7.2 — Documentation overhaul (README, architecture, runbook, security, decisions).
 
 ### 2026-10-26 — T-6.3 — Dashboard + alerts (Grafana & Prometheus)
 **Did:** Built, committed, and deployed the PR Preview Platform Grafana Dashboard and Prometheus Alert Rules per SPEC §6.8:

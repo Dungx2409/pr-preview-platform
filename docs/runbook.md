@@ -392,6 +392,96 @@ Database passwords for ephemeral preview environments and the shared environment
    curl -s -i https://shared.taildc1471.ts.net/readyz
    ```
 
+---
+
+## 7. Disaster Recovery (DR) Procedure & Drill Runbook (T-7.1)
+
+This section provides the end-to-end Standard Operating Procedure for recovering the platform from complete cluster loss, disk failure, or VM recreation back to a 100% operational state.
+
+### 7.1 Recovery Objectives (RTO & RPO)
+- **Recovery Time Objective (RTO):** Total time to rebuild from an empty/base node to full operational state is **≤ 30 minutes** (target).
+- **Recovery Point Objective (RPO):** GitOps state is completely declarative; zero state loss for application configuration, Argo CD applications, and preview definitions stored in Git. Ephemeral preview database data is ephemeral by design (non-persistent).
+
+### 7.2 Prerequisites
+1. **Host Access:** VirtualBox host machine with `ansible-playbook`, `kubectl`, `helm`, and `git`.
+2. **Base Operating System:** Either a freshly installed Ubuntu Server 24.04 VM or restoring the `base vm` snapshot (`VBoxManage snapshot "devops-server" restore "base vm"`).
+3. **Out-of-band Secrets:** Backed up in `~/.config/pr-preview/dr-secrets/` (`operator-oauth.yaml`, `github-token.yaml`, `shared-postgres.yaml`).
+
+### 7.3 Step-by-Step Restoration (Automated)
+
+The automated recovery script [`scripts/dr-restore.sh`](../scripts/dr-restore.sh) coordinates the entire rebuild and measures stopwatch duration:
+
+```bash
+# 1. Restore the VM to the clean base snapshot
+VBoxManage controlvm "devops-server" poweroff
+VBoxManage snapshot "devops-server" restore "base vm"
+VBoxManage startvm "devops-server" --type headless
+
+# 2. Wait 15 seconds for VM network and SSH to come online
+sleep 15
+
+# 3. Execute the automated Disaster Recovery script
+bash scripts/dr-restore.sh
+```
+
+### 7.4 Step-by-Step Restoration (Manual Runbook)
+
+If running commands interactively:
+
+1. **Provision Node & k3s (Ansible):**
+   ```bash
+   ansible-playbook -i ansible/inventory/local.ini ansible/site.yml
+   ```
+   *Note on Kubeconfig:* Ansible automatically fetches the new `/etc/rancher/k3s/k3s.yaml` to `~/.kube/pr-preview.yaml` and updates the server IP to `192.168.56.10`.
+
+2. **Restore Out-of-Band Secrets:**
+   ```bash
+   kubectl create namespace tailscale --dry-run=client -o yaml | kubectl apply -f -
+   kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+   kubectl create namespace shared --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl apply -f ~/.config/pr-preview/dr-secrets/operator-oauth.yaml
+   kubectl apply -f ~/.config/pr-preview/dr-secrets/github-token.yaml
+   kubectl apply -f ~/.config/pr-preview/dr-secrets/shared-postgres.yaml
+   ```
+
+3. **Bootstrap Platform Operators & Components:**
+   ```bash
+   bash platform/bootstrap/install-tailscale.sh
+   bash platform/bootstrap/install-argocd.sh
+   bash platform/bootstrap/install-monitoring.sh
+   ```
+
+4. **Deploy Platform Manifests:**
+   ```bash
+   kubectl apply -f platform/argocd/project-previews.yaml
+   kubectl apply -f platform/argocd/application-shared.yaml
+   kubectl apply -f platform/argocd/applicationset-previews.yaml
+   kubectl apply -f platform/reaper/rbac.yaml
+   kubectl apply -f platform/reaper/configmap.yaml
+   kubectl apply -f platform/reaper/cronjob.yaml
+   ```
+
+5. **Verify System Health:**
+   ```bash
+   # Check pod status across platform namespaces
+   kubectl get pods -A | grep -E "tailscale|argocd|monitoring|shared"
+
+   # Verify Tier 1 Shared App responds over Tailnet
+   curl -s -i https://shared.taildc1471.ts.net/healthz
+
+   # Verify Prometheus rules loaded
+   KUBECONFIG=~/.kube/pr-preview.yaml kubectl exec -n monitoring deploy/preview-exporter -- \
+     python -c "import urllib.request, json; print(json.loads(urllib.request.urlopen('http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/rules').read().decode())['status'])"
+   ```
+
+### 7.5 Runbook Gaps Discovered & Resolved (T-7.1)
+- **Kubeconfig Stale Authority Bug:** Previously, Ansible skipped fetching kubeconfig if `~/.kube/pr-preview.yaml` already existed on the host. During a DR drill, the new k3s installation generates a new cluster CA, causing host authentication failure (`x509: certificate signed by unknown authority`). Fixed in `ansible/roles/k3s/tasks/main.yml` to always refresh the host kubeconfig.
+- **VirtualBox Base Snapshot Memory Downgrade:** Restoring the legacy `base vm` snapshot downgraded the VM to its original 2048 MB RAM instead of 8192 MB, causing severe memory exhaustion and swap thrashing during simultaneous container image pulls. Resolved by verifying and updating VM memory to 8192 MB (`VBoxManage modifyvm "devops-server" --memory 8192`).
+- **Client-Side OpenAPI Discovery Cache:** When Argo CD CRDs are newly applied, the host `kubectl` cache (`~/.kube/cache/discovery`) can serve stale schema definitions causing transient `no matches for kind "ApplicationSet"` errors. Fixed in `scripts/dr-restore.sh` with automatic cache invalidation and retry logic.
+- **Secret Recovery Workflow:** Documented the secure out-of-band secret directory `~/.config/pr-preview/dr-secrets/` with strict `0600` permissions outside the repository, preventing the need to re-issue external tokens during disaster events.
+
+
 
 
 
