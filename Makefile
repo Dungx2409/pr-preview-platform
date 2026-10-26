@@ -62,11 +62,12 @@ lint-helm: ## Lint Helm charts
 lint-trivy: ## Scan filesystem and configurations for security issues with Trivy
 	@echo -e "$(CYAN)→ Running trivy fs & config scan...$(RESET)"
 	@if command -v trivy >/dev/null 2>&1; then \
-		trivy fs --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .; \
-		trivy config --severity CRITICAL,HIGH --exit-code 1 .; \
+		trivy fs --timeout 15m --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .; \
+		trivy config --timeout 15m --severity CRITICAL,HIGH --exit-code 1 .; \
 	elif command -v docker >/dev/null 2>&1; then \
-		docker run --rm -v $$(pwd):/src -w /src aquasec/trivy:0.76.1 fs --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .; \
-		docker run --rm -v $$(pwd):/src -w /src aquasec/trivy:0.76.1 config --severity CRITICAL,HIGH --exit-code 1 .; \
+		mkdir -p "$${HOME}/.cache/trivy"; \
+		docker run --rm -v "$${HOME}/.cache/trivy:/root/.cache" -v $$(pwd):/src -w /src aquasec/trivy:0.76.1 fs --timeout 15m --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .; \
+		docker run --rm -v "$${HOME}/.cache/trivy:/root/.cache" -v $$(pwd):/src -w /src aquasec/trivy:0.76.1 config --timeout 15m --severity CRITICAL,HIGH --exit-code 1 .; \
 	else \
 		echo "Trivy not installed and docker not available. Skipping."; \
 	fi
