@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 6 — Observability + metrics (T-6.1 Monitoring stack)**
+**→ Phase 6 — Observability + metrics (T-6.2 preview-exporter)**
 
 ---
 
@@ -133,7 +133,7 @@
 
 ## Phase 6 — Observability + metrics
 
-- [ ] **T-6.1** 🤝 **Monitoring stack** (depends T-2.3) — pinned install, reduced retention/limits, reachable via port-forward or owner-only access.
+- [x] **T-6.1** 🤝 **Monitoring stack** (depends T-2.3) — pinned install, reduced retention/limits, reachable via port-forward or owner-only access.
   - *Acceptance:* Grafana opens; VM memory headroom and max concurrent previews recorded in DEVLOG.
 
 - [ ] **T-6.2** 🤖 **preview-exporter** (Python) — metrics per SPEC §6.8, unit tests, Deployment manifest, ServiceMonitor.

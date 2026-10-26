@@ -1,0 +1,175 @@
+---
+# ==============================================================================
+# Helm values for kube-prometheus-stack (T-6.1, SPEC §6.8)
+# Chart: prometheus-community/kube-prometheus-stack:92.11.0 (appVersion v0.94.1)
+# Pinned per docs/versions.md. Tuned with lean retention and resource limits.
+# ==============================================================================
+
+# Global configuration
+global:
+  rbac:
+    create: true
+
+# ------------------------------------------------------------------------------
+# Prometheus Operator Deployment
+# ------------------------------------------------------------------------------
+prometheusOperator:
+  enabled: true
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ------------------------------------------------------------------------------
+# Prometheus Server (StatefulSet)
+# ------------------------------------------------------------------------------
+prometheus:
+  enabled: true
+  prometheusSpec:
+    # Lean retention to prevent VM disk and memory bloat
+    retention: 48h
+    retentionSize: 2GiB
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+
+    # Resource requests and limits
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 768Mi
+
+    # Storage persistence via local-path storage class
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+    # Security context
+    securityContext:
+      runAsUser: 10001
+      runAsGroup: 10001
+      runAsNonRoot: true
+      fsGroup: 10001
+
+    # PodMonitor / ServiceMonitor selector: select all in any namespace
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+  service:
+    type: ClusterIP
+    port: 9090
+
+  ingress:
+    enabled: false
+
+# ------------------------------------------------------------------------------
+# Grafana Dashboard & Visualization
+# ------------------------------------------------------------------------------
+grafana:
+  enabled: true
+  adminPassword: "admin"
+  defaultDashboardsEnabled: true
+  defaultDashboardsTimezone: utc
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  persistence:
+    enabled: true
+    type: pvc
+    accessModes: ["ReadWriteOnce"]
+    size: 2Gi
+
+# ------------------------------------------------------------------------------
+# Alertmanager
+# ------------------------------------------------------------------------------
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    retention: 24h
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+
+  service:
+    type: ClusterIP
+
+  ingress:
+    enabled: false
+
+# ------------------------------------------------------------------------------
+# Exporters & Metrics Agents
+# ------------------------------------------------------------------------------
+nodeExporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+kubeStateMetrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# ------------------------------------------------------------------------------
+# k3s Component Scrape Adaptations
+# k3s embeds control plane components into its server process.
+# Disabling upstream unmanaged targets prevents scrape error noise.
+# ------------------------------------------------------------------------------
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+kubelet:
+  enabled: true
+coreDns:
+  enabled: true
+kubeApiServer:
+  enabled: true
