@@ -134,6 +134,30 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-26 — T-7.2 — Docs overhaul (Architecture, Decisions, Runbook, Security, README)
+**Did:** Overhauled and completed all core platform documentation per SPEC §2, §4, §7, §9, and TASK T-7.2:
+- Replaced stub [`README.md`](README.md) with a production/portfolio-grade README:
+  - Clear problem statement (SaaS vs expensive Cloud K8s vs local Compose).
+  - High-level Mermaid architecture diagram.
+  - Empirically measured results table (102s time-to-ready, 6-7s teardown, 0 leaks, 17 min DR rebuild, 77.7% RAM headroom).
+  - Quickstart guide (Ansible provisioning, secret management, platform bootstrapping, curl verification).
+  - Explicit limitations & trade-offs (host PC must be on, Tailscale device quotas, single-node availability, initial TLS handshake latency).
+- Created [`docs/architecture.md`](docs/architecture.md) detailing system topology, GitOps control plane, Tailscale ingress layer, container hardening, observability pipeline, and end-to-end Mermaid sequence diagrams for preview creation and teardown.
+- Expanded [`docs/decisions.md`](docs/decisions.md) with ADR-002 (VirtualBox k3s vs Cloud), ADR-003 (Pull-Based GitOps vs Push), ADR-004 (Dedicated Ephemeral Postgres vs Shared), ADR-005 (Dual-Layer Teardown & Janitor), and ADR-006 (In-Cluster preview-exporter vs Blackbox).
+- Created [`LICENSE`](LICENSE) (MIT License) to ensure clean repository packaging and eliminate dead links.
+- Verified all cross-references across all 16 markdown files with 0 dead links.
+**Why this approach:** Clear, structured, and honest documentation turns an infrastructure experiment into an interview-grade engineering portfolio. Explicitly documenting architecture trade-offs and real measured numbers demonstrates engineering maturity.
+**Verified:**
+- Markdown link audit across all 16 docs returned `0 dead links`.
+- `make test`: 18/18 unit tests passed.
+- `make lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm`: 0 errors.
+- `make helm-template`: Helm chart rendered and dry-run validated cleanly.
+- `gitleaks detect`: 0 leaks found.
+**Gotchas / decisions:**
+- *Decision:* Documenting limitations honestly (e.g. "Host PC must be on" for $0 cloud bill) is a major credibility signal for hiring managers over claiming "production enterprise grade" for a local dev setup.
+**Learned (interview note):** I can explain the entire system architecture because every component has a documented Architecture Decision Record (ADR) justifying why it was chosen over alternatives, grounded in measured trade-offs (e.g., Pull-based GitOps preventing credential exfiltration; Tailscale Operator eliminating public cloud ingress costs).
+**Next:** T-7.3 — Demo assets (👤 owner task: record screen demo of open PR → preview URL → update → close + Grafana screenshots).
+
 ### 2026-10-26 — T-7.1 — DR drill (Disaster Recovery & Rebuild)
 **Did:** Conducted an end-to-end disaster recovery drill from a clean base OS snapshot to verify and measure cluster rebuild time per SPEC §7, §8:
 - Backed up out-of-band secrets (`operator-oauth.yaml`, `github-token.yaml`, `shared-postgres.yaml`) to secure directory `~/.config/pr-preview/dr-secrets/` with `0600` permissions.
