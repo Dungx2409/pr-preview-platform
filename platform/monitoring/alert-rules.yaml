@@ -1,0 +1,49 @@
+---
+# ==============================================================================
+# PrometheusRule for PR Preview Platform (T-6.3, SPEC §6.8)
+# Discovered by Prometheus Operator via release=kube-prometheus-stack
+# ==============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pr-preview-platform-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: pr-preview-platform
+    app.kubernetes.io/part-of: pr-preview-platform
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: pr-preview-platform.rules
+      rules:
+        - alert: VMHighMemoryUsage
+          expr: 100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 85
+          for: 5m
+          labels:
+            severity: warning
+            app: pr-preview-platform
+          annotations:
+            summary: "VM memory usage is above 85%"
+            description: >-
+              Node memory usage is {{ $value | printf "%.1f" }}% on {{ $labels.instance }}.
+              Available memory is dangerously low for previews.
+        - alert: PreviewReaperActed
+          expr: preview_reaped_total > 0
+          for: 1m
+          labels:
+            severity: info
+            app: pr-preview-platform
+          annotations:
+            summary: "Preview environment was reaped"
+            description: >-
+              The reaper cronjob has reaped {{ $value }} orphan or TTL-expired preview environments.
+        - alert: TailscalePodNotReady
+          expr: sum by (pod) (kube_pod_status_phase{namespace="tailscale", phase!="Running"}) > 0
+          for: 5m
+          labels:
+            severity: warning
+            app: pr-preview-platform
+          annotations:
+            summary: "Tailscale pod is not running"
+            description: >-
+              Tailscale pod {{ $labels.pod }} is not in Running phase for more than 5m.

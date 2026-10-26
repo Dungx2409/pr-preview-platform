@@ -87,6 +87,11 @@
    - *Cause:* `node-exporter` must mount `/proc`, `/sys`, and `/` from the host OS and use host networking/PID to gather kernel and hardware metrics. Enforcing Kubernetes Pod Security Standards (PSS) `baseline` or `restricted` rejects these necessary privileges.
    - *Fix:* Enforce `pod-security.kubernetes.io/enforce=privileged` on namespace `monitoring` (with `warn=baseline`, `audit=baseline`), while keeping application and preview namespaces strictly at `enforce=baseline`.
 
+9. **Grafana v13 distroless plugin initialization CPU bottleneck:**
+   - *Symptom:* Grafana container fails liveness probe during startup (`dial tcp ...:3000: connect: connection refused`) and enters CrashLoopBackOff after node/pod restart.
+   - *Cause:* Grafana v13 distroless spawns 15 bundled data source / app plugins as separate child processes simultaneously on startup. Under tight resource limits (`cpu: 200m`), plugin initialization takes > 120s, exceeding the default liveness probe thresholds (`initialDelaySeconds: 60`, `failureThreshold: 10`).
+   - *Fix:* Increase Grafana limits to `cpu: 500m`, `memory: 512Mi` and set `initialDelaySeconds: 120`, `failureThreshold: 20` in `values.yaml`. Once plugins finish initialization, steady-state CPU drops back to < 20m.
+
 ## Open questions / blockers
 
 | # | Question | Owner | Status |
@@ -118,6 +123,45 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-10-26 — T-6.3 — Dashboard + alerts (Grafana & Prometheus)
+**Did:** Built, committed, and deployed the PR Preview Platform Grafana Dashboard and Prometheus Alert Rules per SPEC §6.8:
+- Created [`platform/monitoring/dashboards/pr-preview-overview.json`](platform/monitoring/dashboards/pr-preview-overview.json):
+  - 11 structured panels (stat, gauge, timeseries) organized cleanly across 4 rows (height: 28, schemaVersion 39):
+    - Panel 1 (Stat): `preview_active_total` (Active Previews)
+    - Panel 2 (Stat): `preview_reaped_total` (Reaped Previews)
+    - Panel 3 (Stat): `quantile(0.50, preview_ready_seconds) or vector(0)` (Time-to-Ready p50)
+    - Panel 4 (Stat): `quantile(0.95, preview_ready_seconds) or vector(0)` (Time-to-Ready p95)
+    - Panel 5 (Gauge): `100 * (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)` (VM Memory Free Headroom)
+    - Panel 6 (Timeseries): `preview_active_total` (Active Previews Dynamics over time)
+    - Panel 7 (Timeseries): `preview_ready_seconds` (Time-to-Ready duration per PR)
+    - Panel 8 (Timeseries): `sum by (namespace) (container_memory_working_set_bytes{namespace=~"pr-.*"})` (RAM per preview namespace)
+    - Panel 9 (Timeseries): `sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~"pr-.*"}[5m]))` (CPU per preview namespace)
+    - Panel 10 (Timeseries): `node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes` vs `node_memory_MemAvailable_bytes` (Node Memory Breakdown)
+    - Panel 11 (Timeseries): `sum by (pod) (container_memory_working_set_bytes{namespace="tailscale"})` (Tailscale Operator & Proxy Pods RAM)
+- Created [`platform/monitoring/dashboard-configmap.yaml`](platform/monitoring/dashboard-configmap.yaml):
+  - ConfigMap embedding dashboard JSON labeled `grafana_dashboard: "1"`, allowing the `grafana-sc-dashboard` sidecar to dynamically discover and mount the dashboard into `/tmp/dashboards/` without requiring pod restarts.
+- Created [`platform/monitoring/alert-rules.yaml`](platform/monitoring/alert-rules.yaml):
+  - Declarative `PrometheusRule` custom resource labeled `release: kube-prometheus-stack` with 3 alert rules:
+    - `VMHighMemoryUsage`: Triggers warning when node memory usage exceeds 85% for 5m.
+    - `PreviewReaperActed`: Triggers info alert when `preview_reaped_total > 0` for 1m.
+    - `TailscalePodNotReady`: Triggers warning when any pod in namespace `tailscale` remains outside `Running` phase for 5m.
+- Tuned Grafana deployment values in [`platform/monitoring/values.yaml`](platform/monitoring/values.yaml):
+  - Increased resources (`cpu: 500m`, `memory: 512Mi`) and extended probe tolerances (`initialDelaySeconds: 120`, `failureThreshold: 20`) to eliminate plugin initialization throttling on cold boots.
+- Updated [`platform/bootstrap/install-monitoring.sh`](platform/bootstrap/install-monitoring.sh) to idempotently apply `dashboard-configmap.yaml` and `alert-rules.yaml`.
+**Why this approach:** GitOps-managed dashboards and alert rules avoid drift and UI manual clicking. Grafana's sidecar pattern automatically reloads dashboards upon ConfigMap changes. Prometheus Operator discovers `PrometheusRule` CRDs dynamically and triggers config reload via Prometheus config-reloader sidecar.
+**Verified:**
+- Alert validation: `promtool check rules` validated rules syntax inside Prometheus pod (`SUCCESS: 3 rules found`).
+- Prometheus rules API: Queried `/api/v1/rules`, confirmed group `pr-preview-platform.rules` active with 3 rules (`VMHighMemoryUsage`, `PreviewReaperActed`, `TailscalePodNotReady`).
+- Grafana dashboard discovery: Sidecar detected ConfigMap, wrote `/tmp/dashboards/pr-preview-overview.json`, reloaded Grafana API (HTTP 200).
+- Grafana API queries: Queried `/api/dashboards/uid/pr-preview-overview` (11 panels verified) and `/api/ds/query` proxy with Prometheus datasource (all panels returned HTTP 200 with data frames).
+- Linters & tests: `make lint` passed (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm lint, trivy scan 0 findings), `make test` passed (18/18 passed), `make verify-security` passed (10/10 passed).
+**Gotchas / decisions:**
+- Grafana v13 distroless bundles 15 plugins as child processes; allocating < 500m CPU causes initialization delays that trip default 60s liveness probes.
+- Prometheus Operator requires `release: kube-prometheus-stack` on `PrometheusRule` custom resources unless `ruleSelectorNilUsesHelmValues` is disabled.
+**Learned (interview note):**
+- In Kubernetes observability with Prometheus Operator and Grafana, both dashboards and alerts can be fully managed as code (GitOps). Dashboards are declared as ConfigMaps watched by sidecar containers, and alerts are declared as `PrometheusRule` CRDs monitored by the Prometheus Operator, eliminating manual dashboard click-ops and brittle imperative alert configs.
+**Next:** Phase 7 — T-7.1: Disaster Recovery (DR) drill — restore the base snapshot, run Ansible + bootstrap from runbook, and measure stopwatch time.
 
 ### 2026-10-26 — T-6.2 — preview-exporter (Python)
 **Did:** Built, tested, and deployed `preview-exporter`, a custom in-cluster Prometheus exporter exposing PR preview lifecycle metrics per SPEC §6.8:
