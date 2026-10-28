@@ -239,6 +239,14 @@ kubectl create secret generic shared-main-app-postgres -n shared \
 ```
 
 ### Step 3: Bootstrap Platform Services
+Bootstrap all in-cluster components with a single command:
+```bash
+make bootstrap-platform
+# Or for end-to-end VM provisioning + cluster bootstrap:
+make bootstrap
+```
+
+Alternatively, run each bootstrap script individually:
 ```bash
 # Bootstrap Tailscale Operator
 bash platform/bootstrap/install-tailscale.sh
@@ -283,7 +291,10 @@ curl -s -i https://shared.taildc1471.ts.net/readyz
 
 | Command | Purpose |
 |---|---|
-| `make lint` | Run all linters (`yamllint`, `ansible-lint`, `shellcheck`, `ruff`, `gitleaks`, `helm lint`, `trivy`) |
+| `make bootstrap` | End-to-end bootstrap: provision k3s via Ansible and bootstrap all platform services |
+| `make bootstrap-platform` | Bootstrap in-cluster platform services only (Tailscale, Argo CD, Monitoring, Reaper) |
+| `make sync-config` | Synchronize platform manifests with root `values.yaml` |
+| `make lint` | Run all linters (`check-config`, `yamllint`, `ansible-lint`, `shellcheck`, `ruff`, `gitleaks`, `helm lint`, `trivy`) |
 | `make test` | Run all 18 unit tests (FastAPI app, exporter, and reaper) |
 | `make helm-template` | Render Helm chart with sample values and validate dry-run Kubernetes manifests |
 | `make verify-security` | Run automated security audit against cluster (PSS, NetworkPolicy, DNS isolation) |

@@ -27,6 +27,21 @@ check-config: ## Verify platform manifests are in sync with values.yaml
 	@echo -e "$(CYAN)→ Checking values.yaml synchronization...$(RESET)"
 	@python3 scripts/sync-config.py --check
 
+.PHONY: bootstrap
+bootstrap: ## End-to-end bootstrap: provision k3s via Ansible and bootstrap all platform services
+	@echo -e "$(CYAN)→ Starting end-to-end platform bootstrap...$(RESET)"
+	@bash scripts/dr-restore.sh
+
+.PHONY: bootstrap-platform
+bootstrap-platform: sync-config ## Bootstrap in-cluster platform services only (Tailscale, Argo CD, Monitoring, Reaper)
+	@echo -e "$(CYAN)→ Bootstrapping in-cluster platform services...$(RESET)"
+	@bash platform/bootstrap/install-tailscale.sh
+	@bash platform/bootstrap/install-argocd.sh
+	@bash platform/bootstrap/install-monitoring.sh
+	@kubectl apply -f platform/reaper/rbac.yaml
+	@kubectl apply -f platform/reaper/configmap.yaml
+	@kubectl apply -f platform/reaper/cronjob.yaml
+
 .PHONY: lint-yaml
 lint-yaml: ## Lint YAML files
 	@echo -e "$(CYAN)→ Running yamllint...$(RESET)"
