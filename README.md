@@ -135,7 +135,7 @@ To adapt this preview platform to any other repository/project:
 
 ---
 
-## 4. Key Platform Features
+## 5. Key Platform Features
 
 ### 🔒 Zero-Trust Private Ingress
 - Exposes workloads exclusively on private Tailscale CGNAT IPs (`100.64.0.0/10`).
@@ -168,7 +168,7 @@ To adapt this preview platform to any other repository/project:
 
 ---
 
-## 5. Repository Structure
+## 6. Repository Structure
 
 ```
 .
@@ -193,87 +193,136 @@ To adapt this preview platform to any other repository/project:
 │   ├── reaper/                 # In-cluster Reaper CronJob, RBAC, and ConfigMap
 │   └── tailscale/              # Tailscale Operator Helm values and ACL snippets
 ├── reaper/                     # Python source code and unit tests for the janitor daemon
-└── scripts/                    # Automation scripts (stress testing, security audit, DR restore)
+├── scripts/                    # Automation scripts (sync config, stress testing, audit, DR restore)
+└── values.yaml                 # Centralized single-source-of-truth project configuration
 ```
 
 ---
 
-## 6. Quickstart & Local Setup
+## 7. Quickstart & Local Setup
 
-### Prerequisites
-- Host machine running Linux or macOS with **VirtualBox 7.0+**
-- Host tools installed: `ansible-playbook`, `kubectl`, `helm`, `git`
-- Tailscale account with an OAuth Client (`devices:write`, `auth:read`)
+This guide walks through setting up the platform from scratch — whether you are reproducing the system on your own machine or onboarding a brand new Git repository.
 
-### Step 1: Provision the VM & k3s Cluster
+### Prerequisites & Required Credentials
+1. **Local System Tools:** Linux or macOS with `ansible-playbook`, `kubectl`, `helm`, `git`, `python3` (with `pyyaml`), and **VirtualBox 7.0+** (if provisioning the VM).
+2. **Third-Party Credentials (Never committed to Git):**
+   - **Tailscale Account:** Free account with MagicDNS + HTTPS enabled. Create an **OAuth Client** under *Tailscale Admin Console → Settings → OAuth Clients* with scopes `devices:write` and `auth:read` (tagged `tag:k8s-operator`).
+   - **GitHub Personal Access Token (PAT):** A classic PAT or fine-grained token with `repo` or `pull_requests:read` scope (used by Argo CD ApplicationSet to poll PRs without hitting GitHub API rate limits).
+   - **Database Secret:** Master password for the shared Tier 1 Postgres database.
+
+---
+
+### Step 1: Clone & Configure Target Project
+Clone the repository:
 ```bash
-# 1. Provision the local VM and install k3s via Ansible
-ansible-playbook -i ansible/inventory/local.ini ansible/site.yml
-
-# 2. Set KUBECONFIG to the generated host config
-export KUBECONFIG="${HOME}/.kube/pr-preview.yaml"
-kubectl get nodes -o wide
+git clone https://github.com/Dungx2409/pr-preview-platform.git
+cd pr-preview-platform
 ```
 
-### Step 2: Configure Platform Secrets
-Create the required out-of-band secrets (stored outside the repository):
+If deploying for your own repository or microservice, edit the root [`values.yaml`](values.yaml):
+```yaml
+repo:
+  url: "https://github.com/<your-org>/<your-repo>.git"
+  label: "preview"
+app:
+  name: "<your-app-name>"
+  image: "ghcr.io/<your-org>/<your-app-name>"
+  port: 8000
+  healthcheck: "/healthz"
+namespace:
+  prefix: "preview"
+```
+Propagate configuration automatically to all platform manifests:
+```bash
+make sync-config
+```
+
+---
+
+### Step 2: Configure Secrets (Two Options)
+
+Following Zero-Trust GitOps principles, secrets are managed **out-of-band**. Choose either option below:
+
+#### Option A: Local DR Secrets Directory (Recommended — Persistent & Rebuild-Proof)
+Store your credentials in `~/.config/pr-preview/dr-secrets/` with strict `0600` permissions. When running `make bootstrap` or `scripts/dr-restore.sh`, the system automatically imports them without prompting:
+
 ```bash
 mkdir -p ~/.config/pr-preview/dr-secrets
 chmod 700 ~/.config/pr-preview/dr-secrets
 
 # 1. Tailscale Operator OAuth Secret
-kubectl create namespace tailscale --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic operator-oauth -n tailscale \
-  --from-literal=client_id="<YOUR_CLIENT_ID>" \
-  --from-literal=client_secret="<YOUR_CLIENT_SECRET>"
+  --from-literal=client_id="<YOUR_TAILSCALE_CLIENT_ID>" \
+  --from-literal=client_secret="<YOUR_TAILSCALE_CLIENT_SECRET>" \
+  --dry-run=client -o yaml > ~/.config/pr-preview/dr-secrets/operator-oauth.yaml
 
 # 2. GitHub Access Token for Argo CD & Reaper
-kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic github-token -n argocd \
-  --from-literal=token="<YOUR_GITHUB_TOKEN>"
+  --from-literal=token="<YOUR_GITHUB_TOKEN>" \
+  --dry-run=client -o yaml > ~/.config/pr-preview/dr-secrets/github-token.yaml
 
 # 3. Master Postgres Secret for Shared Tier 1
-kubectl create namespace shared --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic shared-main-app-postgres -n shared \
-  --from-literal=password="postgres-secret-password"
+  --from-literal=password="postgres-secret-password" \
+  --dry-run=client -o yaml > ~/.config/pr-preview/dr-secrets/shared-postgres.yaml
+
+chmod 600 ~/.config/pr-preview/dr-secrets/*.yaml
 ```
 
-### Step 3: Bootstrap Platform Services
-Bootstrap all in-cluster components with a single command:
+#### Option B: Environment Variables (Fast & CI/CD Friendly)
+Export credentials directly into your active shell session before bootstrapping:
 ```bash
-make bootstrap-platform
-# Or for end-to-end VM provisioning + cluster bootstrap:
-make bootstrap
+export TS_OAUTH_CLIENT_ID="tskey-client-..."
+export TS_OAUTH_CLIENT_SECRET="tskey-secret-..."
+export GITHUB_TOKEN="ghp_..."
 ```
-
-Alternatively, run each bootstrap script individually:
-```bash
-# Bootstrap Tailscale Operator
-bash platform/bootstrap/install-tailscale.sh
-
-# Bootstrap Argo CD & GitOps Engine
-bash platform/bootstrap/install-argocd.sh
-kubectl apply -f platform/argocd/project-previews.yaml
-kubectl apply -f platform/argocd/application-shared.yaml
-kubectl apply -f platform/argocd/applicationset-previews.yaml
-
-# Bootstrap Monitoring & Exporter
-bash platform/bootstrap/install-monitoring.sh
-kubectl apply -f platform/reaper/rbac.yaml
-kubectl apply -f platform/reaper/configmap.yaml
-kubectl apply -f platform/reaper/cronjob.yaml
-```
-
-### Step 4: Verify Deployment
-```bash
-# Verify Tier 1 baseline app responds over Tailnet
-curl -s -i https://shared.taildc1471.ts.net/readyz
-# Expected: HTTP/2 200 {"status":"ready","db":"ok"}
-```
+*(The bootstrap scripts will automatically detect these environment variables and create the in-cluster secrets).*
 
 ---
 
-## 7. Developer & Reviewer Workflow
+### Step 3: One-Command Bootstrap
+
+#### Scenario 1: Provision Clean VM + Cluster + Platform from Scratch
+Run Ansible to configure the VirtualBox VM, install k3s, set up Kubeconfig, and bootstrap all platform engines:
+```bash
+make bootstrap
+```
+*Total elapsed time: ~12–15 minutes.*
+
+#### Scenario 2: Bootstrap Platform Services Only (Existing Kubernetes Cluster)
+If you already have a running k3s or Kubernetes cluster connected via `KUBECONFIG`:
+```bash
+export KUBECONFIG="${HOME}/.kube/pr-preview.yaml" # or ~/.kube/config
+make bootstrap-platform
+```
+*(This automatically runs `sync-config`, installs Tailscale Operator, provisions Argo CD, registers AppProjects, deploys Prometheus/Grafana, and starts the Reaper).*
+
+---
+
+### Step 4: Verify Deployment & Preview Trigger
+
+1. **Verify In-Cluster Workloads:**
+   ```bash
+   kubectl get pods -A
+   # Ensure all pods in argocd, tailscale, monitoring, and shared namespaces are Running
+   ```
+
+2. **Test Shared Baseline Tier 1 Endpoint:**
+   ```bash
+   curl -s -i https://shared.<your-tailnet>.ts.net/readyz
+   # Expected: HTTP/2 200 {"status":"ready","db":"ok"}
+   ```
+
+3. **Trigger Your First Preview Environment:**
+   - Create a branch on your application repository, make a code change, and open a GitHub PR.
+   - Attach the GitHub label `preview` to the PR.
+   - GitHub Actions automatically builds and pushes the image.
+   - Argo CD detects the labeled PR within 60s, creates namespace `preview-<PR_NUMBER>`, deploys your app, and Tailscale exposes `https://preview-<PR_NUMBER>.<your-tailnet>.ts.net`.
+   - Close or merge the PR: the preview environment and its Tailscale device are automatically wiped within seconds.
+
+---
+
+## 8. Developer & Reviewer Workflow
 
 ```
 1. Developer creates a branch and opens a Pull Request on GitHub.
@@ -287,7 +336,7 @@ curl -s -i https://shared.taildc1471.ts.net/readyz
 
 ---
 
-## 8. Verification & Quality Commands
+## 9. Verification & Quality Commands
 
 | Command | Purpose |
 |---|---|
@@ -303,7 +352,7 @@ curl -s -i https://shared.taildc1471.ts.net/readyz
 
 ---
 
-## 9. Limitations & Trade-Offs
+## 10. Limitations & Trade-Offs
 
 To maintain architectural transparency, the platform intentionally makes specific trade-offs:
 
@@ -320,7 +369,7 @@ To maintain architectural transparency, the platform intentionally makes specifi
 
 ---
 
-## 10. Documentation Index
+## 11. Documentation Index
 
 - 📘 [System Architecture](docs/architecture.md) — Comprehensive component topology, networking model, and sequence diagrams.
 - 🔐 [Security Matrix & Threat Model](docs/security.md) — Zero-trust access controls, container hardening, and empirical security test results.
