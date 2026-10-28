@@ -3,6 +3,17 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+# Centralized project configuration defaults (overridden by root values.yaml)
+repo:
+  url: "https://github.com/Dungx2409/pr-preview-platform.git"
+  label: "preview"
+
+app:
+  name: "demo-app"
+  image: "ghcr.io/dungx2409/demo-app"
+  port: 8000
+  healthcheck: "/healthz"
+
 replicaCount: 1
 
 # Environment metadata
@@ -126,6 +137,7 @@ postgres:
 
 # Optional Namespace creation with Pod Security Standards labels
 namespace:
+  prefix: "preview"
   create: false
   name: ""
   podSecurity:

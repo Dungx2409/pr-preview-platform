@@ -59,10 +59,16 @@ RESET="\033[0m"
 echo "======================================================================"
 echo "          PR Preview Platform - Teardown Leak Verification            "
 echo "======================================================================"
+CONFIG_PREFIX="preview"
+CONFIG_APP="demo-app"
+if [ -f "values.yaml" ]; then
+  CONFIG_PREFIX=$(python3 -c "import yaml; cfg = yaml.safe_load(open('values.yaml')) or {}; print(cfg.get('namespace', {}).get('prefix', 'preview'))" 2>/dev/null || echo "preview")
+  CONFIG_APP=$(python3 -c "import yaml; cfg = yaml.safe_load(open('values.yaml')) or {}; print(cfg.get('app', {}).get('name', 'demo-app'))" 2>/dev/null || echo "demo-app")
+fi
 if [ -n "${TARGET_PR}" ]; then
-  echo -e "Target: PR #${CYAN}${TARGET_PR}${RESET}"
+  echo -e "Target: PR #${CYAN}${TARGET_PR}${RESET} (prefix: ${CYAN}${CONFIG_PREFIX}${RESET})"
 else
-  echo -e "Target: ${CYAN}All PR Previews (pr-*)${RESET}"
+  echo -e "Target: ${CYAN}All PR Previews (${CONFIG_PREFIX}-* / pr-*)${RESET}"
 fi
 echo -e "Kubeconfig: ${CYAN}${KUBECONFIG}${RESET}"
 echo
@@ -98,41 +104,41 @@ echo "--> [1/5] Checking Kubernetes Cluster Resources..."
 
 # 1. Namespaces
 if [ -n "${TARGET_PR}" ]; then
-  NS_CMD="kubectl get ns -o json | jq -r '[.items[].metadata.name | select(. == \"pr-${TARGET_PR}\")] | .[]'"
+  NS_CMD="kubectl get ns -o json | jq -r '[.items[].metadata.name | select(. == \"${CONFIG_PREFIX}-${TARGET_PR}\" or . == \"pr-${TARGET_PR}\")] | .[]'"
 else
-  NS_CMD="kubectl get ns -o json | jq -r '[.items[].metadata.name | select(startswith(\"pr-\"))] | .[]'"
+  NS_CMD="kubectl get ns -o json | jq -r '[.items[].metadata.name | select(startswith(\"${CONFIG_PREFIX}-\") or startswith(\"pr-\"))] | .[]'"
 fi
 check_k8s_resource "Preview Namespaces" "${NS_CMD}"
 
 # 2. Argo CD Applications
 if [ -n "${TARGET_PR}" ]; then
-  APP_CMD="kubectl get applications.argoproj.io -n argocd -o json | jq -r '[.items[].metadata.name | select(. == \"preview-pr-${TARGET_PR}\")] | .[]'"
+  APP_CMD="kubectl get applications.argoproj.io -n argocd -o json | jq -r '[.items[].metadata.name | select(. == \"preview-${CONFIG_PREFIX}-${TARGET_PR}\" or . == \"preview-pr-${TARGET_PR}\")] | .[]'"
 else
-  APP_CMD="kubectl get applications.argoproj.io -n argocd -o json | jq -r '[.items[].metadata.name | select(startswith(\"preview-pr-\"))] | .[]'"
+  APP_CMD="kubectl get applications.argoproj.io -n argocd -o json | jq -r '[.items[].metadata.name | select(startswith(\"preview-${CONFIG_PREFIX}-\") or startswith(\"preview-pr-\"))] | .[]'"
 fi
 check_k8s_resource "Argo CD Applications" "${APP_CMD}"
 
 # 3. Tailscale Proxy Pods in namespace tailscale
 if [ -n "${TARGET_PR}" ]; then
-  TS_CMD="kubectl get pods -n tailscale -o json | jq -r '[.items[].metadata.name | select(startswith(\"ts-preview-pr-${TARGET_PR}-\"))] | .[]'"
+  TS_CMD="kubectl get pods -n tailscale -o json | jq -r '[.items[].metadata.name | select(startswith(\"ts-preview-${CONFIG_PREFIX}-${TARGET_PR}-\") or startswith(\"ts-preview-pr-${TARGET_PR}-\"))] | .[]'"
 else
-  TS_CMD="kubectl get pods -n tailscale -o json | jq -r '[.items[].metadata.name | select(startswith(\"ts-preview-pr-\"))] | .[]'"
+  TS_CMD="kubectl get pods -n tailscale -o json | jq -r '[.items[].metadata.name | select(startswith(\"ts-preview-${CONFIG_PREFIX}-\") or startswith(\"ts-preview-pr-\"))] | .[]'"
 fi
 check_k8s_resource "Tailscale Proxy Pods" "${TS_CMD}"
 
 # 4. Preview Pods (in case namespace stuck terminating)
 if [ -n "${TARGET_PR}" ]; then
-  PODS_CMD="kubectl get pods -A -o json | jq -r '[.items[] | select(.metadata.namespace == \"pr-${TARGET_PR}\") | .metadata.name] | .[]'"
+  PODS_CMD="kubectl get pods -A -o json | jq -r '[.items[] | select(.metadata.namespace == \"${CONFIG_PREFIX}-${TARGET_PR}\" or .metadata.namespace == \"pr-${TARGET_PR}\") | .metadata.name] | .[]'"
 else
-  PODS_CMD="kubectl get pods -A -o json | jq -r '[.items[] | select(.metadata.namespace | startswith(\"pr-\")) | .metadata.name] | .[]'"
+  PODS_CMD="kubectl get pods -A -o json | jq -r '[.items[] | select((.metadata.namespace | startswith(\"${CONFIG_PREFIX}-\")) or (.metadata.namespace | startswith(\"pr-\"))) | .metadata.name] | .[]'"
 fi
 check_k8s_resource "Preview Workload Pods" "${PODS_CMD}"
 
 # 5. PersistentVolumeClaims
 if [ -n "${TARGET_PR}" ]; then
-  PVC_CMD="kubectl get pvc -A -o json | jq -r '[.items[] | select(.metadata.namespace == \"pr-${TARGET_PR}\") | .metadata.name] | .[]'"
+  PVC_CMD="kubectl get pvc -A -o json | jq -r '[.items[] | select(.metadata.namespace == \"${CONFIG_PREFIX}-${TARGET_PR}\" or .metadata.namespace == \"pr-${TARGET_PR}\") | .metadata.name] | .[]'"
 else
-  PVC_CMD="kubectl get pvc -A -o json | jq -r '[.items[] | select(.metadata.namespace | startswith(\"pr-\")) | .metadata.name] | .[]'"
+  PVC_CMD="kubectl get pvc -A -o json | jq -r '[.items[] | select((.metadata.namespace | startswith(\"${CONFIG_PREFIX}-\")) or (.metadata.namespace | startswith(\"pr-\"))) | .metadata.name] | .[]'"
 fi
 check_k8s_resource "PersistentVolumeClaims" "${PVC_CMD}"
 
@@ -146,13 +152,18 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   # Check active Deployments
   DEPLOY_OUTPUT=""
   if [ -n "${TARGET_PR}" ]; then
-    DEPS=$(gh api "repos/${REPO}/deployments?environment=pr-${TARGET_PR}" --jq '.[].id' 2>/dev/null || true)
+    DEPS=$(gh api "repos/${REPO}/deployments?environment=${CONFIG_PREFIX}-${TARGET_PR}" --jq '.[].id' 2>/dev/null || true)
+    if [ "${CONFIG_PREFIX}" != "pr" ]; then
+      LEGACY_DEPS=$(gh api "repos/${REPO}/deployments?environment=pr-${TARGET_PR}" --jq '.[].id' 2>/dev/null || true)
+      DEPS="${DEPS} ${LEGACY_DEPS}"
+    fi
   else
-    DEPS=$(gh api "repos/${REPO}/deployments" --jq '.[] | select(.environment | startswith("pr-")) | .id' 2>/dev/null || true)
+    DEPS=$(gh api "repos/${REPO}/deployments" --jq ".[] | select((.environment | startswith(\"${CONFIG_PREFIX}-\")) or (.environment | startswith(\"pr-\"))) | .id" 2>/dev/null || true)
   fi
 
   ACTIVE_DEPS_COUNT=0
   for dep_id in ${DEPS}; do
+    [ -z "${dep_id}" ] && continue
     STATUS=$(gh api "repos/${REPO}/deployments/${dep_id}/statuses" --jq '.[0].state' 2>/dev/null || echo "unknown")
     if [ "${STATUS}" != "inactive" ]; then
       ACTIVE_DEPS_COUNT=$((ACTIVE_DEPS_COUNT + 1))
@@ -170,13 +181,13 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     fi
   fi
 
-  # Check GHCR image tags for demo-app
+  # Check GHCR image tags for app package
   if [ -n "${TARGET_PR}" ]; then
-    GHCR_VERSIONS=$(gh api "users/${OWNER}/packages/container/demo-app/versions" \
-      --jq ".[] | select(.metadata.container.tags[]? | startswith(\"pr-${TARGET_PR}-\")) | .metadata.container.tags[]" 2>/dev/null || true)
+    GHCR_VERSIONS=$(gh api "users/${OWNER}/packages/container/${CONFIG_APP}/versions" \
+      --jq ".[] | select(.metadata.container.tags[]? | (startswith(\"${CONFIG_PREFIX}-${TARGET_PR}-\") or startswith(\"pr-${TARGET_PR}-\"))) | .metadata.container.tags[]" 2>/dev/null || true)
   else
-    GHCR_VERSIONS=$(gh api "users/${OWNER}/packages/container/demo-app/versions" \
-      --jq '.[] | select(.metadata.container.tags[]? | startswith("pr-")) | .metadata.container.tags[]' 2>/dev/null || true)
+    GHCR_VERSIONS=$(gh api "users/${OWNER}/packages/container/${CONFIG_APP}/versions" \
+      --jq ".[] | select(.metadata.container.tags[]? | (startswith(\"${CONFIG_PREFIX}-\") or startswith(\"pr-\"))) | .metadata.container.tags[]" 2>/dev/null || true)
   fi
 
   GHCR_COUNT=0

@@ -8,50 +8,61 @@ metadata:
     app.kubernetes.io/part-of: pr-preview-platform
     app.kubernetes.io/component: applicationset
 spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   generators:
-    - pullRequest:
-        github:
-          owner: Dungx2409
-          repo: pr-preview-platform
-          labels:
-            - preview
-          tokenRef:
-            secretName: github-token
-            key: token
-        requeueAfterSeconds: 30
+    - matrix:
+        generators:
+          - pullRequest:
+              github:
+                owner: Dungx2409
+                repo: pr-preview-platform
+                labels:
+                  - preview
+                tokenRef:
+                  secretName: github-token
+                  key: token
+              requeueAfterSeconds: 30
+          - git:
+              repoURL: https://github.com/Dungx2409/pr-preview-platform.git
+              revision: HEAD
+              files:
+                - path: "values.yaml"
   template:
     metadata:
-      name: 'preview-pr-{{number}}'
+      name: 'preview-{{ .namespace.prefix }}-{{ .number }}'
       labels:
         app.kubernetes.io/part-of: pr-preview-platform
-        app.kubernetes.io/instance: 'preview-pr-{{number}}'
+        app.kubernetes.io/instance: 'preview-{{ .namespace.prefix }}-{{ .number }}'
         preview: "true"
-        pr: '{{number}}'
+        pr: '{{ .number }}'
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
       project: previews
       source:
-        repoURL: https://github.com/Dungx2409/pr-preview-platform.git
-        targetRevision: '{{head_sha}}'
+        repoURL: '{{ .repo.url }}'
+        targetRevision: '{{ .head_sha }}'
         path: charts/app
         helm:
+          valueFiles:
+            - /values.yaml
           valuesObject:
-            env: 'pr-{{number}}'
+            env: '{{ .namespace.prefix }}-{{ .number }}'
             pr:
-              number: '{{number}}'
-            gitSha: '{{head_sha}}'
+              number: '{{ .number }}'
+            gitSha: '{{ .head_sha }}'
             image:
-              tag: 'pr-{{number}}-{{head_short_sha}}'
+              tag: '{{ .namespace.prefix }}-{{ .number }}-{{ .head_short_sha }}'
             ingress:
               className: tailscale
-              hostname: 'pr-{{number}}'
+              hostname: '{{ .namespace.prefix }}-{{ .number }}'
             namespace:
               create: true
-              name: 'pr-{{number}}'
+              name: '{{ .namespace.prefix }}-{{ .number }}'
       destination:
         server: https://kubernetes.default.svc
-        namespace: 'pr-{{number}}'
+        namespace: '{{ .namespace.prefix }}-{{ .number }}'
       syncPolicy:
         automated:
           prune: true

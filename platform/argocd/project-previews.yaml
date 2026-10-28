@@ -14,12 +14,14 @@ spec:
   sourceRepos:
     - "https://github.com/Dungx2409/pr-preview-platform.git"
 
-  # Explicit destination whitelist: shared and pr-* only
+  # Explicit destination whitelist: shared, pr-*, and preview-* namespaces
   destinations:
     - server: "https://kubernetes.default.svc"
       namespace: "shared"
     - server: "https://kubernetes.default.svc"
       namespace: "pr-*"
+    - server: "https://kubernetes.default.svc"
+      namespace: "preview-*"
 
   # Cluster-resource whitelist: Namespace only (SPEC §6.4)
   clusterResourceWhitelist:

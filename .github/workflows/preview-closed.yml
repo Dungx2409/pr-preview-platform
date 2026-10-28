@@ -32,19 +32,39 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7.0.1
+
+      - name: Load centralized configuration from values.yaml
+        run: |
+          python3 -c "
+          import yaml
+          with open('values.yaml') as f:
+              cfg = yaml.safe_load(f) or {}
+          print('CONFIG_APP_NAME=' + str(cfg.get('app', {}).get('name', 'demo-app')))
+          print('CONFIG_NS_PREFIX=' + str(cfg.get('namespace', {}).get('prefix', 'preview')))
+          " >> "$GITHUB_ENV"
+
       - name: Deactivate GitHub Deployments
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          ENV_NAME="pr-${PR_NUMBER}"
+          ENV_NAME="${CONFIG_NS_PREFIX}-${PR_NUMBER}"
           echo "Finding active deployments for environment ${ENV_NAME}..."
 
           DEPLOYMENT_IDS=$(gh api "repos/${{ github.repository }}/deployments?environment=${ENV_NAME}" \
             --jq '.[].id' 2>/dev/null || true)
 
-          if [ -n "${DEPLOYMENT_IDS}" ]; then
+          if [ "${ENV_NAME}" != "pr-${PR_NUMBER}" ]; then
+            LEGACY_IDS=$(gh api "repos/${{ github.repository }}/deployments?environment=pr-${PR_NUMBER}" \
+              --jq '.[].id' 2>/dev/null || true)
+            DEPLOYMENT_IDS="${DEPLOYMENT_IDS} ${LEGACY_IDS}"
+          fi
+
+          if [ -n "${DEPLOYMENT_IDS// }" ]; then
             for dep_id in ${DEPLOYMENT_IDS}; do
+              [ -z "${dep_id}" ] && continue
               echo "Deactivating deployment ${dep_id}..."
               gh api -X POST "repos/${{ github.repository }}/deployments/${dep_id}/statuses" \
                 -f state="inactive" \
@@ -60,13 +80,19 @@ jobs:
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          PACKAGE_NAME="demo-app"
+          PACKAGE_NAME="${CONFIG_APP_NAME}"
 
-          echo "Querying GHCR versions for package ${PACKAGE_NAME} matching pr-${PR_NUMBER}-*..."
+          echo "Querying GHCR versions for package ${PACKAGE_NAME} matching ${CONFIG_NS_PREFIX}-${PR_NUMBER}-*..."
 
-          VERSION_IDS=$(gh api "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions" \
+          TAG_PREFIX_1="${CONFIG_NS_PREFIX}-${PR_NUMBER}-"
+          TAG_PREFIX_2="pr-${PR_NUMBER}-"
+          JQ_QUERY=".[] | select(.metadata.container.tags[]? | "
+          JQ_QUERY+="(startswith(\"${TAG_PREFIX_1}\") or startswith(\"${TAG_PREFIX_2}\"))) | .id"
+
+          VERSION_IDS=$(gh api \
+            "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions" \
             --paginate \
-            --jq ".[] | select(.metadata.container.tags[]? | startswith(\"pr-${PR_NUMBER}-\")) | .id" 2>/dev/null \
+            --jq "${JQ_QUERY}" 2>/dev/null \
             | sort -u || true)
 
           if [ -n "${VERSION_IDS}" ]; then
@@ -90,16 +116,17 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           MARKER="<!-- pr-preview-platform-comment -->"
           TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          ENV_NAME="${CONFIG_NS_PREFIX}-${PR_NUMBER}"
 
           BODY=$(cat <<EOF
           ${MARKER}
           ### 🧹 Preview Environment Deactivated
 
           Preview environment for **PR #${PR_NUMBER}** has been dismantled:
-          - **Environment:** \`pr-${PR_NUMBER}\`
+          - **Environment:** \`${ENV_NAME}\`
           - **Status:** Inactive & cleaned up
-          - **Cluster resources:** Namespace \`pr-${PR_NUMBER}\`, pods, and Tailscale proxy removed
-          - **Images:** Container tags \`pr-${PR_NUMBER}-*\` deleted from GHCR
+          - **Cluster resources:** Namespace \`${ENV_NAME}\`, pods, and Tailscale proxy removed
+          - **Images:** Container tags \`${CONFIG_NS_PREFIX}-${PR_NUMBER}-*\` deleted from GHCR
           - **Deactivated at:** \`${TIMESTAMP}\`
 
           > ℹ️ **Note:** Argo CD cascades namespace pruning via \`resources-finalizer\`.

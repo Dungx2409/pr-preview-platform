@@ -46,7 +46,27 @@ data:
     )
     logger = logging.getLogger("preview-exporter")
     
-    PR_NS_PATTERN = re.compile(r"^pr-(\d+)$")
+    def load_central_config() -> dict[str, Any]:
+        config_file = os.environ.get("CONFIG_FILE", "values.yaml")
+        if os.path.exists(config_file):
+            try:
+                import yaml  # type: ignore
+
+                with open(config_file) as f:
+                    return yaml.safe_load(f) or {}
+            except Exception:
+                pass
+        return {}
+
+    _CONFIG = load_central_config()
+    _PREFIX = os.environ.get("PREVIEW_NAMESPACE_PREFIX") or _CONFIG.get("namespace", {}).get(
+        "prefix", "preview"
+    )
+    PR_NS_PATTERN = (
+        re.compile(rf"^(?:{re.escape(_PREFIX)}|pr|preview)-(\d+)$")
+        if _PREFIX not in ("pr", "preview")
+        else re.compile(r"^(?:preview|pr)-(\d+)$")
+    )
     
     
     def parse_rfc3339(ts_str: str) -> datetime:

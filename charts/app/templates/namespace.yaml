@@ -1,13 +1,23 @@
 {{- if .Values.namespace.create -}}
+{{- $nsPrefix := (get (.Values.namespace | default dict) "prefix") | default "preview" -}}
+{{- $nsName := .Values.namespace.name -}}
+{{- if not $nsName -}}
+  {{- if and .Values.pr (hasKey .Values.pr "number") .Values.pr.number -}}
+    {{- $nsName = printf "%s-%v" $nsPrefix .Values.pr.number -}}
+  {{- else -}}
+    {{- $nsName = .Release.Namespace -}}
+  {{- end -}}
+{{- end -}}
+{{- $previewLabel := (get (.Values.repo | default dict) "label") | default "preview" -}}
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: {{ .Values.namespace.name | default .Release.Namespace }}
+  name: {{ $nsName }}
   labels:
     {{- include "app.labels" . | nindent 4 }}
     app.kubernetes.io/component: namespace
     {{- if .Values.pr.number }}
-    preview: "true"
+    {{ $previewLabel }}: "true"
     pr: {{ .Values.pr.number | quote }}
     {{- end }}
     pod-security.kubernetes.io/enforce: {{ .Values.namespace.podSecurity.enforce | default "baseline" | quote }}

@@ -137,7 +137,18 @@ Each preview namespace (`pr-<N>`) is sandboxed with defense-in-depth security:
 - The demo application runs database migrations on startup via SQLAlchemy/Alembic.
 - When the preview namespace is deleted, the database container and its ephemeral storage are destroyed simultaneously, leaving zero dangling persistent volumes (PVs) or storage leaks.
 
-### 2.5 Dual-Layer Lifecycle & Cleanup Engine
+### 2.6 Centralized Project Configuration Model (`values.yaml`)
+
+The platform utilizes a single declarative file at the repository root ([`values.yaml`](../values.yaml)) as the central source of truth for all project-specific metadata:
+- **Application Configuration:** Application name, container image repository, container listening port, and healthcheck path.
+- **Git & Label Metadata:** Upstream repository URL and PR trigger label (`preview`).
+- **Namespace Strategy:** Configurable preview prefix (`prefix: "preview"` or `"pr"`), allowing multiple projects or microservices to run on the same k3s cluster without namespace collisions.
+
+**Parameter Propagation:**
+1. **Argo CD ApplicationSet:** Employs a Matrix Generator combining the GitHub PullRequest generator and a Git File Generator targeting `/values.yaml` with `goTemplate: true`. Application metadata, repository URLs, and Helm parameter objects are dynamically populated from `values.yaml`.
+2. **Helm Engine:** The Helm source loads `/values.yaml` directly via `valueFiles: [/values.yaml]`, parameterizing Deployment container ports, liveness/readiness probes, Service targetPorts, Ingress hostnames, and NetworkPolicy rules.
+3. **CI & Janitor Tooling:** GitHub Actions workflows (`preview.yml`, `preview-closed.yml`, `build.yml`), Reaper CronJob, and cleanup verification scripts extract project parameters from `values.yaml`, ensuring end-to-end consistency.
+4. **Project Switching:** To adapt the platform to a new project: edit `values.yaml`, commit, and let Argo CD sync automatically without modifying any underlying manifests.
 To prevent resource exhaustion on the single-node VM, teardown is managed at two distinct layers:
 1. **Fast-Path (Event-Driven):** When a PR is closed or merged, GitHub Actions workflow `.github/workflows/preview-teardown.yml` triggers immediately. It removes the preview image from GHCR and removes the `preview` label, triggering Argo CD Application deletion within ~6–7 seconds.
 2. **Slow-Path Safety Net (In-Cluster Janitor):** A Python-based `Reaper` CronJob runs every 15 minutes. It queries the GitHub API for PR states and deletes orphaned namespaces, expired previews exceeding TTL (24 hours), or dangling Tailscale proxy resources that outlived their parent application.

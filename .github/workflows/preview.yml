@@ -37,28 +37,46 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Load centralized configuration from values.yaml
+        run: |
+          python3 -c "
+          import yaml
+          with open('values.yaml') as f:
+              cfg = yaml.safe_load(f) or {}
+          print('CONFIG_REPO_LABEL=' + str(cfg.get('repo', {}).get('label', 'preview')))
+          print('CONFIG_APP_NAME=' + str(cfg.get('app', {}).get('name', 'demo-app')))
+          fallback_img = 'ghcr.io/${{ github.repository_owner }}/demo-app'
+          print('CONFIG_APP_IMAGE=' + str(cfg.get('app', {}).get('image', fallback_img)))
+          print('CONFIG_APP_PORT=' + str(cfg.get('app', {}).get('port', 8000)))
+          print('CONFIG_APP_HEALTHCHECK=' + str(cfg.get('app', {}).get('healthcheck', '/healthz')))
+          print('CONFIG_NS_PREFIX=' + str(cfg.get('namespace', {}).get('prefix', 'preview')))
+          " >> "$GITHUB_ENV"
+
       - name: Set Image Name and Tag
         run: |
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           PR_NUMBER="${{ github.event.pull_request.number }}"
           SHORT_SHA_7=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
           SHORT_SHA_8=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-8)
-          IMAGE_NAME="ghcr.io/${REPO_OWNER}/demo-app"
+          IMAGE_NAME="${CONFIG_APP_IMAGE}"
           echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
-          echo "TAG_8=pr-${PR_NUMBER}-${SHORT_SHA_8}" >> "$GITHUB_ENV"
-          echo "TAG_7=pr-${PR_NUMBER}-${SHORT_SHA_7}" >> "$GITHUB_ENV"
+          echo "TAG_8=${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_8}" >> "$GITHUB_ENV"
+          echo "TAG_7=${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_7}" >> "$GITHUB_ENV"
           echo "SHORT_SHA=${SHORT_SHA_7}" >> "$GITHUB_ENV"
-          echo "Target Tags: pr-${PR_NUMBER}-${SHORT_SHA_8} and pr-${PR_NUMBER}-${SHORT_SHA_7}"
+          echo "Tags: ${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_8}, ${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_7}"
 
       - name: Build local container image
         run: |
           DESC="PR Preview image for PR #${{ github.event.pull_request.number }}"
+          BUILD_DIR="${CONFIG_APP_NAME}"
+          if [ ! -d "${BUILD_DIR}" ]; then
+            BUILD_DIR="demo-app"
+          fi
           docker build \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             --label "org.opencontainers.image.description=${DESC}" \
             -t "${{ env.IMAGE_NAME }}:${{ env.TAG_8 }}" \
             -t "${{ env.IMAGE_NAME }}:${{ env.TAG_7 }}" \
-            demo-app/
+            "${BUILD_DIR}/"
 
       - name: Scan container image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
@@ -87,7 +105,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PREVIEW_URL="https://pr-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
+          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
+          ENV_NAME="${CONFIG_NS_PREFIX}-${PR_NUMBER}"
           MARKER="<!-- pr-preview-platform-comment -->"
 
           BODY=$(cat <<EOF
@@ -97,7 +116,7 @@ jobs:
           | Property | Value |
           |---|---|
           | **Preview URL** | [${PREVIEW_URL}](${PREVIEW_URL}) |
-          | **Environment** | \`pr-${PR_NUMBER}\` |
+          | **Environment** | \`${ENV_NAME}\` |
           | **Image Tag** | \`${{ env.TAG_8 }}\` |
           | **Commit** | \`${{ env.SHORT_SHA }}\` |
           | **Status** | Pushed to GHCR; live once Argo CD reconciles (~30–60s) |
@@ -125,8 +144,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PREVIEW_URL="https://pr-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
-          ENV_NAME="pr-${PR_NUMBER}"
+          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
+          ENV_NAME="${CONFIG_NS_PREFIX}-${PR_NUMBER}"
 
           echo "Creating deployment for environment ${ENV_NAME}..."
           DEPLOY_PAYLOAD=$(printf \

@@ -87,11 +87,20 @@ else
   fi
 fi
 
-# 7. Apply AppProjects (previews)
+# 7. Apply AppProjects & ApplicationSet (previews)
+echo "==> Synchronizing platform manifests with root values.yaml..."
+python3 "${REPO_ROOT}/scripts/sync-config.py"
+
 PROJECTS_FILE="${REPO_ROOT}/platform/argocd/project-previews.yaml"
 if [[ -f "${PROJECTS_FILE}" ]]; then
   echo "==> Applying Argo CD AppProject 'previews'..."
   kubectl apply -f "${PROJECTS_FILE}"
+fi
+
+APPSET_FILE="${REPO_ROOT}/platform/argocd/applicationset-previews.yaml"
+if [[ -f "${APPSET_FILE}" ]]; then
+  echo "==> Applying Argo CD ApplicationSet 'previews'..."
+  kubectl apply -f "${APPSET_FILE}"
 fi
 
 echo "==> [Argo CD Bootstrap] Installation completed successfully!"

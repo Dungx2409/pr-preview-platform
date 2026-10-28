@@ -212,6 +212,41 @@ KUBECONFIG=~/.kube/pr-preview.yaml kubectl apply -f platform/argocd/project-prev
 KUBECONFIG=~/.kube/pr-preview.yaml kubectl get appproject previews -n argocd
 ```
 
+### 5.3 Switching Project / Centralized Configuration (`values.yaml`)
+
+The platform's target workload is parameterized via the root [`values.yaml`](../values.yaml).
+
+**Rule: "Đổi dự án = sửa `values.yaml`, commit, Argo sync"**
+
+```yaml
+repo:
+  url: "https://github.com/Dungx2409/pr-preview-platform.git"
+  label: "preview"
+app:
+  name: "demo-app"
+  image: "ghcr.io/dungx2409/demo-app"
+  port: 8000
+  healthcheck: "/healthz"
+namespace:
+  prefix: "preview"
+```
+
+**Step-by-Step Procedure to Switch to a New Project:**
+1. **Modify `values.yaml`:**
+   - Update `repo.url` to the new project's Git URL.
+   - Update `app.name`, `app.image`, `app.port`, and `app.healthcheck`.
+   - Update `namespace.prefix` if running in parallel with existing previews to avoid collisions.
+2. **Update AppProject Whitelist (if switching Git repositories):**
+   - In `platform/argocd/project-previews.yaml`, add the new `repo.url` under `spec.sourceRepos` to satisfy tenant isolation (SEC-14).
+3. **Commit & Push:**
+   ```bash
+   git add values.yaml platform/argocd/project-previews.yaml
+   git commit -m "chore: switch platform project in values.yaml"
+   git push origin main
+   ```
+4. **Argo CD Sync:**
+   Argo CD reconciles the ApplicationSet within 30 seconds. All subsequent PR previews automatically adopt the new application image, port, and health check.
+
 ---
 
 ## 6. Credential & Secret Rotation Procedures (SOP)

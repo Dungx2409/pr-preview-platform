@@ -134,6 +134,43 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-28 — Refactor: Centralized Project Configuration (values.yaml) & Bootstrap Automation
+**Did:** Refactored the platform configuration to be driven from a single root [`values.yaml`](values.yaml), eliminating hardcoded repository URLs, container images, ports, and healthcheck paths across manifests, ApplicationSets, and workflows:
+- Created root [`values.yaml`](values.yaml) with schema `repo: {url, label}`, `app: {name, image, port, healthcheck}`, `namespace: {prefix: "preview"}`.
+- Updated Helm chart `charts/app`:
+  - `templates/deployment.yaml`: parameterized `image` (`.Values.app.image`), `containerPort` (`.Values.app.port`), and livenessProbe `path` (`.Values.app.healthcheck`).
+  - `templates/service.yaml`: parameterized `targetPort` (`.Values.app.port`).
+  - `templates/networkpolicy.yaml`: parameterized ingress allow rules to dynamic app port (`.Values.app.port`).
+  - `templates/ingress.yaml` & `templates/namespace.yaml`: parameterized namespace and hostname prefixes (`.Values.namespace.prefix`) and trigger label (`.Values.repo.label`).
+  - `templates/_helpers.tpl`: parameterized preview label selector (`.Values.repo.label`).
+  - `charts/app/values.yaml`: included root schema defaults with fallback compatibility.
+- Updated Argo CD ApplicationSet (`platform/argocd/applicationset-previews.yaml`):
+  - Converted to `goTemplate: true` with matrix generator combining `pullRequest` generator and `git` file generator targeting `/values.yaml`.
+  - Injected `/values.yaml` into Helm `valueFiles`.
+  - Parameterized `repoURL`, `metadata.name`, `destination.namespace`, `ingress.hostname`, and `image.tag` with `{{ .namespace.prefix }}` and `{{ .repo.url }}`.
+- Created [`scripts/sync-config.py`](scripts/sync-config.py) and added `make sync-config` / `make check-config`:
+  - Automatically parses `repo.url` from `values.yaml` and synchronizes GitHub `owner`/`repo` into `applicationset-previews.yaml` and allowed destinations in `project-previews.yaml`.
+  - Added CI check to `make lint` verifying manifests never drift out of sync.
+- Added `make bootstrap` and `make bootstrap-platform` targets to [`Makefile`](Makefile):
+  - `make bootstrap`: provisions clean VM via Ansible and bootstraps platform in one command.
+  - `make bootstrap-platform`: bootstraps in-cluster platform services on any existing cluster.
+- Parameterized CI workflows (`.github/workflows/preview.yml`, `preview-closed.yml`, `build.yml`): load `values.yaml` dynamically to extract image repository, build directory, tags, and environment names.
+- Parameterized janitor tooling (`reaper/src/reaper.py`, `exporter/src/exporter.py`, configmaps, and `scripts/verify-teardown.sh`): dynamic namespace prefix pattern matching `^(?:<prefix>|pr|preview)-(\d+)$` with zero regressions.
+- Overhauled onboarding and quickstart documentation in [`README.md`](README.md): documented external repo onboarding, `values.yaml` workflow, out-of-band secrets management via `~/.config/pr-preview/dr-secrets/` or environment variables, and one-click bootstrap.
+**Why this approach:** Decoupling platform orchestration from the specific demo workload transforms a single-purpose proof-of-concept into a truly reusable GitOps platform template that can host any arbitrary backend/full-stack project.
+**Verified:**
+- `helm template test-app charts/app | diff -u /tmp/baseline-manifest.yaml -`: 0 diff lines (exact byte-for-byte fidelity with baseline).
+- `helm template test-app charts/app -f values.yaml | diff -u /tmp/baseline-manifest.yaml -`: 0 diff lines.
+- `helm template test-app charts/app --set app.port=9000 --set app.image=quay.io/org/custom-app --set app.healthcheck=/api/health --set namespace.prefix=staging --set pr.number=10`: successfully rendered all custom overridden parameters.
+- `make helm-template`: 12/12 Kubernetes manifests validated cleanly against Kubeconform v0.6.7 (strict mode).
+- `make lint`: 100% clean across yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm lint, trivy, and check-config.
+- `make test`: 18/18 unit tests passed in 0.08s.
+**Gotchas / decisions:**
+- *Gotcha:* Regex capture groups in python scripts: `re.compile(r"^(preview|pr)-(\d+)$")` caused `match.group(1)` to capture the prefix string instead of the PR number; resolved with non-capturing group `^(?:preview|pr)-(\d+)$`.
+- *Decision:* Argo CD ApplicationSet matrix generators evaluate child generators independently; `pullRequest` generator cannot consume variables produced by a sibling `git` generator. Using `scripts/sync-config.py` bridges this gap cleanly while maintaining single-source-of-truth in `values.yaml`.
+**Learned (interview note):** I can explain how Argo CD ApplicationSets combine Git and Pull Request generators using a Matrix Generator with `goTemplate: true`, how Helm charts can dynamically merge a repository root configuration file (`/values.yaml`), and how to build zero-touch bootstrap automation for disaster recovery.
+**Next:** Ready for PR review and merge into main.
+
 ### 2026-10-26 — T-7.2 — Docs overhaul (Architecture, Decisions, Runbook, Security, README)
 **Did:** Overhauled and completed all core platform documentation per SPEC §2, §4, §7, §9, and TASK T-7.2:
 - Replaced stub [`README.md`](README.md) with a production/portfolio-grade README:

@@ -14,8 +14,33 @@ help: ## Display available make targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(CYAN)%-18s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: lint
-lint: lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm lint-trivy ## Run all linters (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm, trivy)
+lint: check-config lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm lint-trivy ## Run all linters (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm, trivy)
 	@echo -e "$(GREEN)✓ All linters passed!$(RESET)"
+
+.PHONY: sync-config
+sync-config: ## Synchronize platform manifests with root values.yaml
+	@echo -e "$(CYAN)→ Synchronizing platform manifests with values.yaml...$(RESET)"
+	@python3 scripts/sync-config.py
+
+.PHONY: check-config
+check-config: ## Verify platform manifests are in sync with values.yaml
+	@echo -e "$(CYAN)→ Checking values.yaml synchronization...$(RESET)"
+	@python3 scripts/sync-config.py --check
+
+.PHONY: bootstrap
+bootstrap: ## End-to-end bootstrap: provision k3s via Ansible and bootstrap all platform services
+	@echo -e "$(CYAN)→ Starting end-to-end platform bootstrap...$(RESET)"
+	@bash scripts/dr-restore.sh
+
+.PHONY: bootstrap-platform
+bootstrap-platform: sync-config ## Bootstrap in-cluster platform services only (Tailscale, Argo CD, Monitoring, Reaper)
+	@echo -e "$(CYAN)→ Bootstrapping in-cluster platform services...$(RESET)"
+	@bash platform/bootstrap/install-tailscale.sh
+	@bash platform/bootstrap/install-argocd.sh
+	@bash platform/bootstrap/install-monitoring.sh
+	@kubectl apply -f platform/reaper/rbac.yaml
+	@kubectl apply -f platform/reaper/configmap.yaml
+	@kubectl apply -f platform/reaper/cronjob.yaml
 
 .PHONY: lint-yaml
 lint-yaml: ## Lint YAML files
@@ -102,10 +127,10 @@ helm-template: ## Render Helm chart with sample values and validate
 		helm lint charts/app; \
 		if command -v kubeconform >/dev/null 2>&1; then \
 			helm template test-app charts/app | kubeconform -summary -strict; \
-		elif [ -f "$${HOME}/.kube/pr-preview.yaml" ]; then \
-			helm template test-app charts/app | KUBECONFIG="$${HOME}/.kube/pr-preview.yaml" kubectl apply --dry-run=client -f -; \
 		elif command -v docker >/dev/null 2>&1; then \
 			helm template test-app charts/app | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 -summary -strict; \
+		elif [ -f "$${HOME}/.kube/pr-preview.yaml" ]; then \
+			helm template test-app charts/app | KUBECONFIG="$${HOME}/.kube/pr-preview.yaml" kubectl apply --dry-run=client -f -; \
 		else \
 			helm template test-app charts/app >/dev/null; \
 		fi \
