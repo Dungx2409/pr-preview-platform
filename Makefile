@@ -14,8 +14,18 @@ help: ## Display available make targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(CYAN)%-18s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: lint
-lint: lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm lint-trivy ## Run all linters (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm, trivy)
+lint: check-config lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm lint-trivy ## Run all linters (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm, trivy)
 	@echo -e "$(GREEN)✓ All linters passed!$(RESET)"
+
+.PHONY: sync-config
+sync-config: ## Synchronize platform manifests with root values.yaml
+	@echo -e "$(CYAN)→ Synchronizing platform manifests with values.yaml...$(RESET)"
+	@python3 scripts/sync-config.py
+
+.PHONY: check-config
+check-config: ## Verify platform manifests are in sync with values.yaml
+	@echo -e "$(CYAN)→ Checking values.yaml synchronization...$(RESET)"
+	@python3 scripts/sync-config.py --check
 
 .PHONY: lint-yaml
 lint-yaml: ## Lint YAML files
