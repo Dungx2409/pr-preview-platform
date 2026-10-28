@@ -122,12 +122,13 @@ namespace:
   prefix: "preview"   # Change when running multiple projects in parallel
 ```
 
-### Switching Projects: "Đổi dự án = sửa `values.yaml`, commit, Argo sync"
+### Switching Projects: "Đổi dự án = sửa `values.yaml`, make sync-config, Argo sync"
 
-To adapt this preview platform to any other backend/full-stack project:
-1. **Edit [`values.yaml`](values.yaml):** Set your Git repository URL, application name, container image path, listening port, healthcheck endpoint, and namespace prefix.
-2. **Commit & Push:** Commit your changes to `main` (`git commit -am "chore: adapt platform to new project" && git push origin main`).
-3. **Argo CD Automatic Sync:** Argo CD's ApplicationSet reads `values.yaml` directly via the matrix file generator (`goTemplate: true`) and feeds `/values.yaml` to the Helm engine. New previews automatically bind to the new image, port, and health probes without touching any Kubernetes manifest.
+To adapt this preview platform to any other repository/project:
+1. **Edit [`values.yaml`](values.yaml):** Set your target Git repository URL (`repo.url`), container image path, port, and healthcheck.
+2. **Auto-Sync Manifests:** Run `make sync-config` (or commit; `make lint` verifies sync automatically). This propagates `owner`, `repo`, and whitelist rules to `applicationset-previews.yaml` and `project-previews.yaml` with zero manual YAML edits.
+3. **Commit & Push:** Commit and push to git (`git commit -am "chore: adapt platform to new project" && git push`).
+4. **Argo CD Automatic Sync:** Argo CD immediately detects the changes, binds to the new repository, and starts creating previews for the new project!
 
 > [!TIP]
 > **Multi-Project Parallelism:** When running previews for multiple distinct microservices or projects on the same cluster, change `namespace.prefix` (e.g. `billing`, `auth`, `preview`) to isolate namespaces and prevent resource collisions.
