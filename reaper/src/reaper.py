@@ -25,7 +25,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger("reaper")
 
-PR_NS_PATTERN = re.compile(r"^pr-(\d+)$")
+
+def load_central_config() -> dict[str, Any]:
+    config_file = os.environ.get("CONFIG_FILE", "values.yaml")
+    if os.path.exists(config_file):
+        try:
+            import yaml  # type: ignore
+
+            with open(config_file) as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            pass
+    return {}
+
+
+_CONFIG = load_central_config()
+_PREFIX = os.environ.get("PREVIEW_NAMESPACE_PREFIX") or _CONFIG.get("namespace", {}).get(
+    "prefix", "preview"
+)
+PR_NS_PATTERN = (
+    re.compile(rf"^(?:{re.escape(_PREFIX)}|pr|preview)-(\d+)$")
+    if _PREFIX not in ("pr", "preview")
+    else re.compile(r"^(?:preview|pr)-(\d+)$")
+)
 
 
 class K8sClient:
@@ -226,12 +248,15 @@ def reap_cycle(
                 reason,
             )
             # 1. Delete Argo CD Application if it exists (triggers GitOps finalizer cascade)
-            if app_name in argo_apps:
+            target_app = (
+                app_name if app_name in argo_apps else (ns_name if ns_name in argo_apps else None)
+            )
+            if target_app:
                 try:
-                    k8s.delete_argo_application(app_name, namespace="argocd")
-                    logger.info("Deleted Argo CD Application '%s'", app_name)
+                    k8s.delete_argo_application(target_app, namespace="argocd")
+                    logger.info("Deleted Argo CD Application '%s'", target_app)
                 except Exception as e:
-                    logger.error("Failed to delete Application '%s': %s", app_name, e)
+                    logger.error("Failed to delete Application '%s': %s", target_app, e)
 
             # 2. Delete Namespace directly
             try:
@@ -279,7 +304,14 @@ def reap_cycle(
 
 
 def main() -> None:
-    github_repo = os.environ.get("GITHUB_REPO", "Dungx2409/pr-preview-platform")
+    default_repo = "Dungx2409/pr-preview-platform"
+    repo_url = _CONFIG.get("repo", {}).get("url", "")
+    if repo_url:
+        m = re.search(r"github\.com[/:]+([^/]+/[^/\.]+)", repo_url)
+        if m:
+            default_repo = m.group(1).removesuffix(".git")
+
+    github_repo = os.environ.get("GITHUB_REPO", default_repo)
     github_token = os.environ.get("GITHUB_TOKEN", "")
     ttl_hours = float(os.environ.get("PREVIEW_TTL_HOURS", "24"))
     dry_run = os.environ.get("DRY_RUN", "true").lower() in ("true", "1", "yes")

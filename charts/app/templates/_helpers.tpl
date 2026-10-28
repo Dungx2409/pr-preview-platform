@@ -49,7 +49,7 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if .Values.pr.number }}
 pr: {{ .Values.pr.number | quote }}
-preview: "true"
+{{ (get (.Values.repo | default dict) "label") | default "preview" }}: "true"
 {{- end }}
 {{- end }}
 

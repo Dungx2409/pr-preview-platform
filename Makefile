@@ -102,10 +102,10 @@ helm-template: ## Render Helm chart with sample values and validate
 		helm lint charts/app; \
 		if command -v kubeconform >/dev/null 2>&1; then \
 			helm template test-app charts/app | kubeconform -summary -strict; \
-		elif [ -f "$${HOME}/.kube/pr-preview.yaml" ]; then \
-			helm template test-app charts/app | KUBECONFIG="$${HOME}/.kube/pr-preview.yaml" kubectl apply --dry-run=client -f -; \
 		elif command -v docker >/dev/null 2>&1; then \
 			helm template test-app charts/app | docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 -summary -strict; \
+		elif [ -f "$${HOME}/.kube/pr-preview.yaml" ]; then \
+			helm template test-app charts/app | KUBECONFIG="$${HOME}/.kube/pr-preview.yaml" kubectl apply --dry-run=client -f -; \
 		else \
 			helm template test-app charts/app >/dev/null; \
 		fi \

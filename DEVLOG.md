@@ -134,6 +134,39 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-28 — Refactor: Centralized Project Configuration (values.yaml)
+**Did:** Refactored the platform configuration to be driven from a single root [`values.yaml`](values.yaml), eliminating hardcoded repository URLs, container images, ports, and healthcheck paths across manifests, ApplicationSets, and workflows:
+- Created root [`values.yaml`](values.yaml) with schema `repo: {url, label}`, `app: {name, image, port, healthcheck}`, `namespace: {prefix: "preview"}`.
+- Updated Helm chart `charts/app`:
+  - `templates/deployment.yaml`: parameterized `image` (`.Values.app.image`), `containerPort` (`.Values.app.port`), and livenessProbe `path` (`.Values.app.healthcheck`).
+  - `templates/service.yaml`: parameterized `targetPort` (`.Values.app.port`).
+  - `templates/networkpolicy.yaml`: parameterized ingress allow rules to dynamic app port (`.Values.app.port`).
+  - `templates/ingress.yaml` & `templates/namespace.yaml`: parameterized namespace and hostname prefixes (`.Values.namespace.prefix`) and trigger label (`.Values.repo.label`).
+  - `templates/_helpers.tpl`: parameterized preview label selector (`.Values.repo.label`).
+  - `charts/app/values.yaml`: included root schema defaults with fallback compatibility.
+- Updated Argo CD ApplicationSet (`platform/argocd/applicationset-previews.yaml`):
+  - Converted to `goTemplate: true` with matrix generator combining `pullRequest` generator and `git` file generator targeting `/values.yaml`.
+  - Injected `/values.yaml` into Helm `valueFiles`.
+  - Parameterized `repoURL`, `metadata.name`, `destination.namespace`, `ingress.hostname`, and `image.tag` with `{{ .namespace.prefix }}` and `{{ .repo.url }}`.
+- Updated `platform/argocd/application-shared.yaml`: added `/values.yaml` to `helm.valueFiles`.
+- Updated `platform/argocd/project-previews.yaml`: permitted both `pr-*` and `preview-*` in `destinations`.
+- Parameterized CI workflows (`.github/workflows/preview.yml`, `preview-closed.yml`, `build.yml`): load `values.yaml` dynamically to extract image repository, build directory, tags, and environment names.
+- Parameterized janitor tooling (`reaper/src/reaper.py`, `exporter/src/exporter.py`, configmaps, and `scripts/verify-teardown.sh`): dynamic namespace prefix pattern matching `^(?:<prefix>|pr|preview)-(\d+)$` with zero regressions.
+- Updated documentation ([`README.md`](README.md), [`docs/architecture.md`](docs/architecture.md), [`docs/runbook.md`](docs/runbook.md)) documenting: "Đổi dự án = sửa `values.yaml`, commit, Argo sync".
+**Why this approach:** Decoupling platform orchestration from the specific demo workload transforms a single-purpose proof-of-concept into a truly reusable GitOps platform template that can host any arbitrary backend/full-stack project.
+**Verified:**
+- `helm template test-app charts/app | diff -u /tmp/baseline-manifest.yaml -`: 0 diff lines (exact byte-for-byte fidelity with baseline).
+- `helm template test-app charts/app -f values.yaml | diff -u /tmp/baseline-manifest.yaml -`: 0 diff lines.
+- `helm template test-app charts/app --set app.port=9000 --set app.image=quay.io/org/custom-app --set app.healthcheck=/api/health --set namespace.prefix=staging --set pr.number=10`: successfully rendered all custom overridden parameters.
+- `make helm-template`: 12/12 Kubernetes manifests validated cleanly against Kubeconform v0.6.7 (strict mode).
+- `make lint`: 100% clean (`yamllint`, `ansible-lint`, `shellcheck`, `ruff`, `gitleaks`, `helm lint`, `trivy`).
+- `make test`: 18/18 unit tests passed in 0.07s.
+**Gotchas / decisions:**
+- *Gotcha:* Regex capture groups in python scripts: `re.compile(r"^(preview|pr)-(\d+)$")` caused `match.group(1)` to capture the prefix string instead of the PR number; resolved with non-capturing group `^(?:preview|pr)-(\d+)$`.
+- *Decision:* Matrix generator in Argo CD ApplicationSet evaluates child generators independently; using Git file generator to feed parameters into `goTemplate: true` enables parameterizing both Application CR fields and Helm `valuesObject` cleanly.
+**Learned (interview note):** I can explain how Argo CD ApplicationSets combine Git and Pull Request generators using a Matrix Generator with `goTemplate: true`, and how Helm charts can dynamically merge a repository root configuration file (`/values.yaml`) to achieve clean separation of concerns between GitOps infrastructure and application metadata.
+**Next:** Ready for PR review and merge into main.
+
 ### 2026-10-26 — T-7.2 — Docs overhaul (Architecture, Decisions, Runbook, Security, README)
 **Did:** Overhauled and completed all core platform documentation per SPEC §2, §4, §7, §9, and TASK T-7.2:
 - Replaced stub [`README.md`](README.md) with a production/portfolio-grade README:

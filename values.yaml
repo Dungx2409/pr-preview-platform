@@ -1,0 +1,32 @@
+---
+# ==============================================================================
+# PR Preview Platform - Centralized Project Configuration (values.yaml)
+# ==============================================================================
+# This is the single source of truth for the entire platform.
+# To switch to a new project: edit this file, commit, and let Argo CD sync.
+# ==============================================================================
+
+# Git repository configuration
+repo:
+  # Git clone URL of the repository hosting preview workloads
+  url: "https://github.com/Dungx2409/pr-preview-platform.git"
+  # PR label that triggers preview environment provisioning
+  label: "preview"
+
+# Application container and service settings
+app:
+  # Name of the application (also package name in GHCR)
+  name: "demo-app"
+  # Full container image repository (without tag)
+  image: "ghcr.io/dungx2409/demo-app"
+  # Internal container port that application listens on
+  port: 8000
+  # Liveness probe endpoint path
+  healthcheck: "/healthz"
+
+# Preview environment namespace conventions
+namespace:
+  # Prefix used for generated preview namespaces, hostnames, and Argo CD apps.
+  # Change prefix (e.g. 'preview', 'pr', 'staging') when running multiple projects
+  # in parallel on the same cluster to prevent namespace collisions.
+  prefix: "preview"

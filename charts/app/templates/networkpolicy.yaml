@@ -35,13 +35,13 @@ spec:
               kubernetes.io/metadata.name: {{ .Values.networkPolicy.tailscaleNamespace | default "tailscale" }}
       ports:
         - protocol: TCP
-          port: 8000
+          port: {{ (get (.Values.app | default dict) "port") | default .Values.service.targetPort | default 8000 }}
     # Allow ingress from within the same preview namespace
     - from:
         - podSelector: {}
       ports:
         - protocol: TCP
-          port: 8000
+          port: {{ (get (.Values.app | default dict) "port") | default .Values.service.targetPort | default 8000 }}
   egress:
     # Allow DNS resolution
     - to:

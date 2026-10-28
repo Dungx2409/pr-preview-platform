@@ -100,6 +100,40 @@ Every metric below was measured against the live environment under real-world te
 
 ---
 
+## 4. Centralized Project Configuration (`values.yaml`)
+
+The platform avoids hardcoded project parameters across manifests, Helm templates, and ApplicationSets by centralizing configuration into a single root [`values.yaml`](values.yaml):
+
+```yaml
+# Git repository configuration
+repo:
+  url: "https://github.com/Dungx2409/pr-preview-platform.git"
+  label: "preview"
+
+# Application container and service settings
+app:
+  name: "demo-app"
+  image: "ghcr.io/dungx2409/demo-app"
+  port: 8000
+  healthcheck: "/healthz"
+
+# Preview environment namespace conventions
+namespace:
+  prefix: "preview"   # Change when running multiple projects in parallel
+```
+
+### Switching Projects: "Đổi dự án = sửa `values.yaml`, commit, Argo sync"
+
+To adapt this preview platform to any other backend/full-stack project:
+1. **Edit [`values.yaml`](values.yaml):** Set your Git repository URL, application name, container image path, listening port, healthcheck endpoint, and namespace prefix.
+2. **Commit & Push:** Commit your changes to `main` (`git commit -am "chore: adapt platform to new project" && git push origin main`).
+3. **Argo CD Automatic Sync:** Argo CD's ApplicationSet reads `values.yaml` directly via the matrix file generator (`goTemplate: true`) and feeds `/values.yaml` to the Helm engine. New previews automatically bind to the new image, port, and health probes without touching any Kubernetes manifest.
+
+> [!TIP]
+> **Multi-Project Parallelism:** When running previews for multiple distinct microservices or projects on the same cluster, change `namespace.prefix` (e.g. `billing`, `auth`, `preview`) to isolate namespaces and prevent resource collisions.
+
+---
+
 ## 4. Key Platform Features
 
 ### 🔒 Zero-Trust Private Ingress
