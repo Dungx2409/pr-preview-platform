@@ -124,11 +124,24 @@ namespace:
 
 ### Switching Projects: "Đổi dự án = sửa `values.yaml`, make sync-config, Argo sync"
 
-To adapt this preview platform to any other repository/project:
-1. **Edit [`values.yaml`](values.yaml):** Set your target Git repository URL (`repo.url`), container image path, port, and healthcheck.
+To adapt this preview platform to any other repository or microservice:
+
+#### Part A: In the Platform Repository (`pr-preview-platform`)
+1. **Edit [`values.yaml`](values.yaml):** Set your target Git repository URL (`repo.url`), container image path (`app.image`), application directory name (`app.name`), port, and healthcheck.
 2. **Auto-Sync Manifests:** Run `make sync-config` (or commit; `make lint` verifies sync automatically). This propagates `owner`, `repo`, and whitelist rules to `applicationset-previews.yaml` and `project-previews.yaml` with zero manual YAML edits.
-3. **Commit & Push:** Commit and push to git (`git commit -am "chore: adapt platform to new project" && git push`).
-4. **Argo CD Automatic Sync:** Argo CD immediately detects the changes, binds to the new repository, and starts creating previews for the new project!
+3. **Commit & Push:** Commit and push changes (`git commit -am "chore: adapt platform to new project" && git push`).
+4. **Argo CD Automatic Sync:** Argo CD immediately detects the changes, binds to the new repository, and starts listening for labeled PRs from your app repository!
+
+#### Part B: In Your Target Application Repository
+In order for your application repository to automatically build container images, comment preview URLs on PRs, and clean up on close, the following files and settings must be present in the app repository:
+1. **Copy GitHub Actions Workflows:** Copy `.github/workflows/preview.yml` and `.github/workflows/preview-closed.yml` from this repository into your application repository's `.github/workflows/` directory.
+2. **Copy Centralized Configuration:** Copy `values.yaml` into the root of your application repository so the CI workflows can resolve image names, tags, and namespace prefixes.
+3. **Copy Helm Chart (if standalone):** Ensure your application repository contains the Helm chart under `charts/app/` (or retain it in the platform repository if using a centralized chart model).
+4. **Configure GitHub Repository Permissions:**
+   - **Label:** Create the PR label `preview` in your repository (*Issues -> Labels -> New label*).
+   - **Workflow Permissions:** Navigate to *Settings -> Actions -> General -> Workflow permissions* and select **"Read and write permissions"** (required for GitHub Actions to push container images to GHCR, comment preview URLs on PRs, and update GitHub Deployment statuses).
+   - **GHCR Visibility:** After the first PR workflow runs, ensure your GHCR container package visibility is set to **Public** (*Package Settings -> Change package visibility -> Public*) so the k3s cluster can pull images without needing private registry credentials.
+   - **Tailnet Name:** In `.github/workflows/preview.yml` and `preview-closed.yml`, ensure `TAILNET_NAME` matches your Tailscale tailnet domain (e.g. `<tailnet-name>.ts.net`).
 
 > [!TIP]
 > **Multi-Project Parallelism:** When running previews for multiple distinct microservices or projects on the same cluster, change `namespace.prefix` (e.g. `billing`, `auth`, `preview`) to isolate namespaces and prevent resource collisions.
@@ -137,18 +150,18 @@ To adapt this preview platform to any other repository/project:
 
 ## 5. Key Platform Features
 
-### 🔒 Zero-Trust Private Ingress
+### Zero-Trust Private Ingress
 - Exposes workloads exclusively on private Tailscale CGNAT IPs (`100.64.0.0/10`).
 - No ports opened on physical routers or host firewalls.
 - Automatic Let's Encrypt certificates issued via DNS-01 ACME challenges through Tailscale MagicDNS.
 - Injects authenticated user headers (`Tailscale-User-Login`, `Tailscale-User-Name`) into backend requests.
 
-### ☸️ Pull-Based GitOps Orchestration
+### Pull-Based GitOps Orchestration
 - Powered by **Argo CD ApplicationSet** using the GitHub Pull Request Generator.
 - Continuous reconciliation: automatically updates preview images on new git pushes and deletes applications when PRs close.
 - Strict AppProject boundaries: restricts generated preview applications to `pr-*` namespaces and prohibits cluster-scoped resource creation.
 
-### 🛡️ Defense-in-Depth Container Hardening
+### Defense-in-Depth Container Hardening
 - Enforces Kubernetes **Pod Security Standards (PSS) Baseline**.
 - Non-root execution (`runAsUser: 10001`, `runAsNonRoot: true`).
 - Read-only root filesystems (`readOnlyRootFilesystem: true`).
@@ -156,11 +169,11 @@ To adapt this preview platform to any other repository/project:
 - Default-deny NetworkPolicies blocking metadata server (`169.254.169.254/32`) and cross-namespace traversal.
 - Namespace `ResourceQuota` and `LimitRange` guardrails preventing CPU/memory exhaustion.
 
-### 🧹 Dual-Layer Teardown & Janitor Engine
+### Dual-Layer Teardown & Janitor Engine
 - **Fast-Path:** GitHub Actions workflow triggered on `pull_request: [closed]` immediately removes GHCR images and untags the PR.
 - **Slow-Path Safety Net:** In-cluster Python `Reaper` CronJob runs every 15 minutes, purging orphaned namespaces, expired previews exceeding TTL (24 hours), or dangling Tailscale proxy pods.
 
-### 📊 Comprehensive Observability Stack
+### Comprehensive Observability Stack
 - **Prometheus & Grafana:** Deployed via a customized, lean `kube-prometheus-stack` (v92.11.0).
 - **Custom Exporter (`preview-exporter`):** Lightweight Python daemon tracking active previews, reaped count, and exact time-to-ready duration.
 - **Pre-configured Dashboard:** 11-panel Grafana dashboard visualizing live preview inventory, time-to-ready quantiles (p50/p95), and node headroom.
@@ -203,17 +216,72 @@ To adapt this preview platform to any other repository/project:
 
 This guide walks through setting up the platform from scratch — whether you are reproducing the system on your own machine or onboarding a brand new Git repository.
 
-### Prerequisites & Required Credentials
-1. **Local System Tools:** Linux or macOS with `ansible-playbook`, `kubectl`, `helm`, `git`, `python3` (with `pyyaml`), and **VirtualBox 7.0+** (if provisioning the VM).
-2. **Third-Party Credentials (Never committed to Git):**
-   - **Tailscale Account:** Free account with MagicDNS + HTTPS enabled. Create an **OAuth Client** under *Tailscale Admin Console → Settings → OAuth Clients* with scopes `devices:write` and `auth:read` (tagged `tag:k8s-operator`).
-   - **GitHub Personal Access Token (PAT):** A classic PAT or fine-grained token with `repo` or `pull_requests:read` scope (used by Argo CD ApplicationSet to poll PRs without hitting GitHub API rate limits).
-   - **Database Secret:** Master password for the shared Tier 1 Postgres database.
+### Prerequisites
+
+Ensure the following tools and compatible versions are installed on your workstation. Versions match the cluster configurations defined in [`docs/versions.md`](docs/versions.md):
+
+| Requirement | Minimum / Recommended | Check | Install |
+|---|---|---|---|
+| **Python** | `3.10+` | `python3 --version` | [python.org](https://www.python.org/downloads/) |
+| **uv** *(recommended)* | `any` | `uv --version` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **pipx** *(alternative)* | `any` | `pipx --version` | `pip install pipx` |
+| **Ansible Core** | `2.16+` (pinned `2.16.19`) | `ansible --version` | `uv tool install ansible-core==2.16.19` or `pipx install --include-deps ansible-core==2.16.19` |
+| **Helm** | `v3.12+` (pinned `v3.22.1`) | `helm version --short` | `curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \| bash` |
+| **kubectl** | `v1.28+` (tested `v1.35.9`) | `kubectl version --client` | [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) (compatible with k3s `v1.36.5`) |
+| **VirtualBox** *(if VM)* | `7.0+` (tested `7.2.10`) | `VBoxManage --version` | [virtualbox.org](https://www.virtualbox.org/wiki/Downloads) |
+
+#### Quick Install by Operating System
+
+**macOS quick install (Homebrew):**
+```bash
+brew install python@3.12 uv helm kubernetes-cli
+uv tool install --with ansible-core==2.16.19 ansible
+# or with pipx:
+# brew install pipx && pipx install --include-deps ansible-core==2.16.19
+```
+
+**Windows quick install:**
+```powershell
+winget install astral-sh.uv
+winget install Kubernetes.kubectl
+winget install Helm.Helm
+winget install Oracle.VirtualBox
+```
+> [!NOTE]
+> **Ansible on Windows:** Ansible requires a POSIX environment. Run Ansible inside **WSL2 (Ubuntu)** (`wsl --install -d Ubuntu`) using the Ubuntu/Debian instructions below.
+
+**Ubuntu / Debian:**
+```bash
+sudo apt update && sudo apt install -y python3.12 python3-pip pipx curl git make
+# or install uv:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install pinned Ansible Core (via uv or pipx to avoid system Python conflicts):
+uv tool install ansible-core==2.16.19
+# or with pipx:
+pipx install --include-deps ansible-core==2.16.19
+
+# Install kubectl (v1.35.9 - matching k3s v1.36.5):
+curl -LO "https://dl.k8s.io/release/v1.35.9/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl
+
+# Install Helm (v3):
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+---
+
+### Required Third-Party Credentials (Never committed to Git)
+- **Tailscale Account:** Free account with MagicDNS + HTTPS enabled. Create an **OAuth Client** under *Tailscale Admin Console → Settings → OAuth Clients* with scopes `devices:write` and `auth:read` (tagged `tag:k8s-operator`).
+- **GitHub Personal Access Token (PAT):** A classic PAT or fine-grained token with `repo` or `pull_requests:read` scope (used by Argo CD ApplicationSet to poll PRs without hitting GitHub API rate limits).
+- **Database Secret:** Master password for the shared Tier 1 Postgres database.
 
 ---
 
 ### Step 1: Clone & Configure Target Project
-Clone the repository:
+
+#### 1. Configure the Platform Repository
+Clone the platform repository on your management workstation or VM host:
 ```bash
 git clone https://github.com/Dungx2409/pr-preview-platform.git
 cd pr-preview-platform
@@ -236,6 +304,24 @@ Propagate configuration automatically to all platform manifests:
 ```bash
 make sync-config
 ```
+Commit and push the changes: `git commit -am "chore: adapt platform to <your-repo>" && git push`.
+
+#### 2. Set Up Your Target Application Repository
+In order for your application repository to automatically trigger preview builds and lifecycle teardown when PRs are opened and closed:
+1. **Copy Workflows & Configuration:** Copy `.github/workflows/preview.yml`, `.github/workflows/preview-closed.yml`, and `values.yaml` into your application repository:
+   ```bash
+   # From your application repository root:
+   mkdir -p .github/workflows
+   cp /path/to/pr-preview-platform/.github/workflows/preview.yml .github/workflows/
+   cp /path/to/pr-preview-platform/.github/workflows/preview-closed.yml .github/workflows/
+   cp /path/to/pr-preview-platform/values.yaml ./values.yaml
+   cp -r /path/to/pr-preview-platform/charts ./charts
+   ```
+2. **Configure Tailnet Name:** In `.github/workflows/preview.yml` and `preview-closed.yml`, set `TAILNET_NAME` to your Tailscale tailnet domain (e.g. `<tailnet-name>.ts.net`).
+3. **Repository Settings & Permissions:**
+   - **Label:** Create label `preview` in your GitHub repository (*Issues -> Labels -> New label*).
+   - **Workflow Permissions:** In *Settings -> Actions -> General -> Workflow permissions*, select **Read and write permissions** (required to push images to GHCR, post PR comments, and manage deployment statuses).
+   - **Package Visibility:** After the first PR push, navigate to your GitHub Profile / Org *Packages*, select the package, open *Package settings*, and set visibility to **Public** so k3s can pull images without requiring private credentials.
 
 ---
 
@@ -371,11 +457,11 @@ To maintain architectural transparency, the platform intentionally makes specifi
 
 ## 11. Documentation Index
 
-- 📘 [System Architecture](docs/architecture.md) — Comprehensive component topology, networking model, and sequence diagrams.
-- 🔐 [Security Matrix & Threat Model](docs/security.md) — Zero-trust access controls, container hardening, and empirical security test results.
-- 📋 [Operations & Runbook](docs/runbook.md) — Standard Operating Procedures (SOP), troubleshooting guides, and Disaster Recovery protocol.
-- ⚖️ [Architecture Decision Records (ADRs)](docs/decisions.md) — Technical evaluations, rejected alternatives, and trade-off rationales.
-- 📌 [Pinned Component Versions](docs/versions.md) — Explicit versions for Kubernetes, Helm charts, Python packages, and linters.
+- [System Architecture](docs/architecture.md) — Comprehensive component topology, networking model, and sequence diagrams.
+- [Security Matrix & Threat Model](docs/security.md) — Zero-trust access controls, container hardening, and empirical security test results.
+- [Operations & Runbook](docs/runbook.md) — Standard Operating Procedures (SOP), troubleshooting guides, and Disaster Recovery protocol.
+- [Architecture Decision Records (ADRs)](docs/decisions.md) — Technical evaluations, rejected alternatives, and trade-off rationales.
+- [Pinned Component Versions](docs/versions.md) — Explicit versions for Kubernetes, Helm charts, Python packages, and linters.
 
 ---
 
