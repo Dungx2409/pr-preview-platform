@@ -134,6 +134,17 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-10-30 — CI: Fix build workflow with automated PR for shared image bump
+**Did:** Updated `.github/workflows/build.yml` to replace direct `git push` to `main` with automated Pull Request creation using `gh pr create`:
+- Added `pull-requests: write` to workflow permissions.
+- Switched from direct branch commit to branch `automation/bump-shared-${SHORT_SHA}`.
+- Automated creation of PR against `main` using GitHub CLI `gh pr create` with `${{ secrets.GITHUB_TOKEN }}`.
+**Why this approach:** Direct pushes to `main` fail under GitHub Branch Protection rules (`GH006: Protected branch update failed`). Opening an automated PR adheres to branch protection policies while still allowing automated version tracking for the Tier 1 shared environment.
+**Verified:** `yamllint -c .yamllint.yaml .github/workflows/build.yml` passed with 0 errors and 0 warnings.
+**Gotchas / decisions:** GitHub Actions token (`GITHUB_TOKEN`) requires "Allow GitHub Actions to create and approve pull requests" enabled in repo Settings -> Actions -> General -> Workflow permissions to call `gh pr create`.
+**Learned (interview note):** I can explain branch protection compliance in CI/CD: Automated bots operating in pipelines should respect repository governance (required status checks, peer reviews) by dispatching changes as Pull Requests rather than bypassing protected branches with elevated write credentials.
+**Next:** Verify GitHub Actions run on next merge to `main`.
+
 ### 2026-10-28 — Refactor: Centralized Project Configuration (values.yaml) & Bootstrap Automation
 **Did:** Refactored the platform configuration to be driven from a single root [`values.yaml`](values.yaml), eliminating hardcoded repository URLs, container images, ports, and healthcheck paths across manifests, ApplicationSets, and workflows:
 - Created root [`values.yaml`](values.yaml) with schema `repo: {url, label}`, `app: {name, image, port, healthcheck}`, `namespace: {prefix: "preview"}`.
