@@ -137,18 +137,18 @@ To adapt this preview platform to any other repository/project:
 
 ## 5. Key Platform Features
 
-### 🔒 Zero-Trust Private Ingress
+### Zero-Trust Private Ingress
 - Exposes workloads exclusively on private Tailscale CGNAT IPs (`100.64.0.0/10`).
 - No ports opened on physical routers or host firewalls.
 - Automatic Let's Encrypt certificates issued via DNS-01 ACME challenges through Tailscale MagicDNS.
 - Injects authenticated user headers (`Tailscale-User-Login`, `Tailscale-User-Name`) into backend requests.
 
-### ☸️ Pull-Based GitOps Orchestration
+### Pull-Based GitOps Orchestration
 - Powered by **Argo CD ApplicationSet** using the GitHub Pull Request Generator.
 - Continuous reconciliation: automatically updates preview images on new git pushes and deletes applications when PRs close.
 - Strict AppProject boundaries: restricts generated preview applications to `pr-*` namespaces and prohibits cluster-scoped resource creation.
 
-### 🛡️ Defense-in-Depth Container Hardening
+### Defense-in-Depth Container Hardening
 - Enforces Kubernetes **Pod Security Standards (PSS) Baseline**.
 - Non-root execution (`runAsUser: 10001`, `runAsNonRoot: true`).
 - Read-only root filesystems (`readOnlyRootFilesystem: true`).
@@ -156,11 +156,11 @@ To adapt this preview platform to any other repository/project:
 - Default-deny NetworkPolicies blocking metadata server (`169.254.169.254/32`) and cross-namespace traversal.
 - Namespace `ResourceQuota` and `LimitRange` guardrails preventing CPU/memory exhaustion.
 
-### 🧹 Dual-Layer Teardown & Janitor Engine
+### Dual-Layer Teardown & Janitor Engine
 - **Fast-Path:** GitHub Actions workflow triggered on `pull_request: [closed]` immediately removes GHCR images and untags the PR.
 - **Slow-Path Safety Net:** In-cluster Python `Reaper` CronJob runs every 15 minutes, purging orphaned namespaces, expired previews exceeding TTL (24 hours), or dangling Tailscale proxy pods.
 
-### 📊 Comprehensive Observability Stack
+### Comprehensive Observability Stack
 - **Prometheus & Grafana:** Deployed via a customized, lean `kube-prometheus-stack` (v92.11.0).
 - **Custom Exporter (`preview-exporter`):** Lightweight Python daemon tracking active previews, reaped count, and exact time-to-ready duration.
 - **Pre-configured Dashboard:** 11-panel Grafana dashboard visualizing live preview inventory, time-to-ready quantiles (p50/p95), and node headroom.
@@ -424,11 +424,11 @@ To maintain architectural transparency, the platform intentionally makes specifi
 
 ## 11. Documentation Index
 
-- 📘 [System Architecture](docs/architecture.md) — Comprehensive component topology, networking model, and sequence diagrams.
-- 🔐 [Security Matrix & Threat Model](docs/security.md) — Zero-trust access controls, container hardening, and empirical security test results.
-- 📋 [Operations & Runbook](docs/runbook.md) — Standard Operating Procedures (SOP), troubleshooting guides, and Disaster Recovery protocol.
-- ⚖️ [Architecture Decision Records (ADRs)](docs/decisions.md) — Technical evaluations, rejected alternatives, and trade-off rationales.
-- 📌 [Pinned Component Versions](docs/versions.md) — Explicit versions for Kubernetes, Helm charts, Python packages, and linters.
+- [System Architecture](docs/architecture.md) — Comprehensive component topology, networking model, and sequence diagrams.
+- [Security Matrix & Threat Model](docs/security.md) — Zero-trust access controls, container hardening, and empirical security test results.
+- [Operations & Runbook](docs/runbook.md) — Standard Operating Procedures (SOP), troubleshooting guides, and Disaster Recovery protocol.
+- [Architecture Decision Records (ADRs)](docs/decisions.md) — Technical evaluations, rejected alternatives, and trade-off rationales.
+- [Pinned Component Versions](docs/versions.md) — Explicit versions for Kubernetes, Helm charts, Python packages, and linters.
 
 ---
 
