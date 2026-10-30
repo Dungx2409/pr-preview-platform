@@ -124,11 +124,24 @@ namespace:
 
 ### Switching Projects: "Đổi dự án = sửa `values.yaml`, make sync-config, Argo sync"
 
-To adapt this preview platform to any other repository/project:
-1. **Edit [`values.yaml`](values.yaml):** Set your target Git repository URL (`repo.url`), container image path, port, and healthcheck.
+To adapt this preview platform to any other repository or microservice:
+
+#### Part A: In the Platform Repository (`pr-preview-platform`)
+1. **Edit [`values.yaml`](values.yaml):** Set your target Git repository URL (`repo.url`), container image path (`app.image`), application directory name (`app.name`), port, and healthcheck.
 2. **Auto-Sync Manifests:** Run `make sync-config` (or commit; `make lint` verifies sync automatically). This propagates `owner`, `repo`, and whitelist rules to `applicationset-previews.yaml` and `project-previews.yaml` with zero manual YAML edits.
-3. **Commit & Push:** Commit and push to git (`git commit -am "chore: adapt platform to new project" && git push`).
-4. **Argo CD Automatic Sync:** Argo CD immediately detects the changes, binds to the new repository, and starts creating previews for the new project!
+3. **Commit & Push:** Commit and push changes (`git commit -am "chore: adapt platform to new project" && git push`).
+4. **Argo CD Automatic Sync:** Argo CD immediately detects the changes, binds to the new repository, and starts listening for labeled PRs from your app repository!
+
+#### Part B: In Your Target Application Repository
+In order for your application repository to automatically build container images, comment preview URLs on PRs, and clean up on close, the following files and settings must be present in the app repository:
+1. **Copy GitHub Actions Workflows:** Copy `.github/workflows/preview.yml` and `.github/workflows/preview-closed.yml` from this repository into your application repository's `.github/workflows/` directory.
+2. **Copy Centralized Configuration:** Copy `values.yaml` into the root of your application repository so the CI workflows can resolve image names, tags, and namespace prefixes.
+3. **Copy Helm Chart (if standalone):** Ensure your application repository contains the Helm chart under `charts/app/` (or retain it in the platform repository if using a centralized chart model).
+4. **Configure GitHub Repository Permissions:**
+   - **Label:** Create the PR label `preview` in your repository (*Issues -> Labels -> New label*).
+   - **Workflow Permissions:** Navigate to *Settings -> Actions -> General -> Workflow permissions* and select **"Read and write permissions"** (required for GitHub Actions to push container images to GHCR, comment preview URLs on PRs, and update GitHub Deployment statuses).
+   - **GHCR Visibility:** After the first PR workflow runs, ensure your GHCR container package visibility is set to **Public** (*Package Settings -> Change package visibility -> Public*) so the k3s cluster can pull images without needing private registry credentials.
+   - **Tailnet Name:** In `.github/workflows/preview.yml` and `preview-closed.yml`, ensure `TAILNET_NAME` matches your Tailscale tailnet domain (e.g. `<tailnet-name>.ts.net`).
 
 > [!TIP]
 > **Multi-Project Parallelism:** When running previews for multiple distinct microservices or projects on the same cluster, change `namespace.prefix` (e.g. `billing`, `auth`, `preview`) to isolate namespaces and prevent resource collisions.
@@ -266,7 +279,9 @@ curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 |
 ---
 
 ### Step 1: Clone & Configure Target Project
-Clone the repository:
+
+#### 1. Configure the Platform Repository
+Clone the platform repository on your management workstation or VM host:
 ```bash
 git clone https://github.com/Dungx2409/pr-preview-platform.git
 cd pr-preview-platform
@@ -289,6 +304,24 @@ Propagate configuration automatically to all platform manifests:
 ```bash
 make sync-config
 ```
+Commit and push the changes: `git commit -am "chore: adapt platform to <your-repo>" && git push`.
+
+#### 2. Set Up Your Target Application Repository
+In order for your application repository to automatically trigger preview builds and lifecycle teardown when PRs are opened and closed:
+1. **Copy Workflows & Configuration:** Copy `.github/workflows/preview.yml`, `.github/workflows/preview-closed.yml`, and `values.yaml` into your application repository:
+   ```bash
+   # From your application repository root:
+   mkdir -p .github/workflows
+   cp /path/to/pr-preview-platform/.github/workflows/preview.yml .github/workflows/
+   cp /path/to/pr-preview-platform/.github/workflows/preview-closed.yml .github/workflows/
+   cp /path/to/pr-preview-platform/values.yaml ./values.yaml
+   cp -r /path/to/pr-preview-platform/charts ./charts
+   ```
+2. **Configure Tailnet Name:** In `.github/workflows/preview.yml` and `preview-closed.yml`, set `TAILNET_NAME` to your Tailscale tailnet domain (e.g. `<tailnet-name>.ts.net`).
+3. **Repository Settings & Permissions:**
+   - **Label:** Create label `preview` in your GitHub repository (*Issues -> Labels -> New label*).
+   - **Workflow Permissions:** In *Settings -> Actions -> General -> Workflow permissions*, select **Read and write permissions** (required to push images to GHCR, post PR comments, and manage deployment statuses).
+   - **Package Visibility:** After the first PR push, navigate to your GitHub Profile / Org *Packages*, select the package, open *Package settings*, and set visibility to **Public** so k3s can pull images without requiring private credentials.
 
 ---
 
