@@ -85,7 +85,8 @@ kubectl get pods -n "${NAMESPACE}"
 echo
 echo "==> Access Grafana via local port-forward:"
 echo "    KUBECONFIG=${KUBECONFIG} kubectl port-forward svc/${RELEASE_NAME}-grafana -n ${NAMESPACE} 3000:80"
-echo "    URL: http://localhost:3000 (User: admin / Password: admin)"
+echo "    URL: http://localhost:3000 (User: admin; password auto-generated in secret ${RELEASE_NAME}-grafana)"
+echo "    Get password: kubectl -n ${NAMESPACE} get secret ${RELEASE_NAME}-grafana -o jsonpath='{.data.admin-password}' | base64 -d"
 echo
 echo "==> Access Prometheus via local port-forward:"
 echo "    KUBECONFIG=${KUBECONFIG} kubectl port-forward svc/${RELEASE_NAME}-prometheus -n ${NAMESPACE} 9090:9090"

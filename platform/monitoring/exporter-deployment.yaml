@@ -35,6 +35,8 @@ spec:
           env:
             - name: EXPORTER_PORT
               value: "8000"
+            - name: PREVIEW_NAMESPACE_PREFIX
+              value: "preview"
           ports:
             - name: http-metrics
               containerPort: 8000

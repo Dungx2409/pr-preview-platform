@@ -26,23 +26,7 @@ logging.basicConfig(
 logger = logging.getLogger("reaper")
 
 
-def load_central_config() -> dict[str, Any]:
-    config_file = os.environ.get("CONFIG_FILE", "values.yaml")
-    if os.path.exists(config_file):
-        try:
-            import yaml  # type: ignore
-
-            with open(config_file) as f:
-                return yaml.safe_load(f) or {}
-        except Exception:
-            pass
-    return {}
-
-
-_CONFIG = load_central_config()
-_PREFIX = os.environ.get("PREVIEW_NAMESPACE_PREFIX") or _CONFIG.get("namespace", {}).get(
-    "prefix", "preview"
-)
+_PREFIX = os.environ.get("PREVIEW_NAMESPACE_PREFIX", "preview")
 PR_NS_PATTERN = (
     re.compile(rf"^(?:{re.escape(_PREFIX)}|pr|preview)-(\d+)$")
     if _PREFIX not in ("pr", "preview")
@@ -54,9 +38,7 @@ class K8sClient:
     """Lightweight Kubernetes API client using standard library urllib."""
 
     def __init__(self, api_server: str = "", token: str = "", ca_file: str = "") -> None:
-        self.api_server = api_server or os.environ.get(
-            "KUBERNETES_SERVICE_HOST_URL", "https://kubernetes.default.svc"
-        )
+        self.api_server = api_server or "https://kubernetes.default.svc"
         self.token = token
         self.ca_file = ca_file
 
@@ -72,8 +54,8 @@ class K8sClient:
         self.ssl_context = ssl.create_default_context()
         if self.ca_file and os.path.exists(self.ca_file):
             self.ssl_context.load_verify_locations(self.ca_file)
-        elif not os.path.exists(self.ca_file or ""):
-            # For local test / mock environments
+        elif os.environ.get("INSECURE_SKIP_TLS_VERIFY", "").lower() in ("1", "true", "yes"):
+            # Explicit opt-in for local test / mock environments without a CA.
             self.ssl_context.check_hostname = False
             self.ssl_context.verify_mode = ssl.CERT_NONE
 
@@ -123,8 +105,23 @@ class K8sClient:
         return res.get("items", []) if res else []
 
 
+def _next_page_url(link_header: str | None) -> str | None:
+    """Extract the 'next' page URL from a GitHub API Link header."""
+    if not link_header:
+        return None
+    for part in link_header.split(","):
+        if 'rel="next"' in part:
+            m = re.search(r"<([^>]+)>", part)
+            return m.group(1) if m else None
+    return None
+
+
 def get_open_preview_prs(repo: str, token: str) -> set[int]:
-    """Query GitHub API to obtain set of open PR numbers with label 'preview'."""
+    """Query GitHub API for open PR numbers labeled 'preview'.
+
+    Follows pagination via the Link header so more than 100 open PRs are not
+    silently dropped (which would wrongly mark their previews as orphaned).
+    """
     url = f"https://api.github.com/repos/{repo}/pulls?state=open&per_page=100"
     headers = {
         "Accept": "application/vnd.github+json",
@@ -133,19 +130,21 @@ def get_open_preview_prs(repo: str, token: str) -> set[int]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        logger.error("GitHub API error: HTTP %s - %s", e.code, e.read().decode("utf-8"))
-        raise
-
     open_prs: set[int] = set()
-    for pr in data:
-        labels = [lbl.get("name") for lbl in pr.get("labels", [])]
-        if "preview" in labels:
-            open_prs.add(pr["number"])
+    while url:
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                page = json.loads(resp.read().decode("utf-8"))
+                url = _next_page_url(resp.headers.get("Link"))
+        except urllib.error.HTTPError as e:
+            logger.error("GitHub API error: HTTP %s - %s", e.code, e.read().decode("utf-8"))
+            raise
+
+        for pr in page:
+            labels = [lbl.get("name") for lbl in pr.get("labels", [])]
+            if "preview" in labels:
+                open_prs.add(pr["number"])
 
     return open_prs
 
@@ -272,11 +271,13 @@ def reap_cycle(
     for pod in proxy_pods:
         p_name = pod.get("metadata", {}).get("name", "")
         # Tailscale operator names proxy pods: ts-<ingress-name>-<random>-0
-        # For previews: ts-preview-pr-<N>-app-...
-        m = re.search(r"ts-preview-(pr-\d+)-", p_name)
+        # For previews: ts-preview-pr-<N>-app-... (or ts-preview-preview-<N>-...)
+        m = re.search(r"ts-preview-(?:pr|preview)-(\d+)-", p_name)
         if m:
-            owner_ns = m.group(1)
-            if owner_ns not in active_ns_names:
+            pr_num = m.group(1)
+            # Namespaces use either "preview-<N>" or "pr-<N>" depending on the
+            # configured prefix, so check both spellings before flagging stale.
+            if f"preview-{pr_num}" not in active_ns_names and f"pr-{pr_num}" not in active_ns_names:
                 stale_proxies.append(p_name)
 
     if stale_proxies:
@@ -304,14 +305,7 @@ def reap_cycle(
 
 
 def main() -> None:
-    default_repo = "Dungx2409/pr-preview-platform"
-    repo_url = _CONFIG.get("repo", {}).get("url", "")
-    if repo_url:
-        m = re.search(r"github\.com[/:]+([^/]+/[^/\.]+)", repo_url)
-        if m:
-            default_repo = m.group(1).removesuffix(".git")
-
-    github_repo = os.environ.get("GITHUB_REPO", default_repo)
+    github_repo = os.environ.get("GITHUB_REPO", "Dungx2409/pr-preview-platform")
     github_token = os.environ.get("GITHUB_TOKEN", "")
     ttl_hours = float(os.environ.get("PREVIEW_TTL_HOURS", "24"))
     dry_run = os.environ.get("DRY_RUN", "true").lower() in ("true", "1", "yes")

@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -55,7 +55,6 @@ jobs:
           docker build \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             -t "${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}" \
-            -t "${{ env.IMAGE_NAME }}:latest" \
             "${BUILD_DIR}/"
 
       - name: Scan container image with Trivy
@@ -75,7 +74,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push container images to GHCR
+      - name: Push container image to GHCR
         run: |
           docker push "${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
-          docker push "${{ env.IMAGE_NAME }}:latest"
+
+      - name: Bump shared image tag in values-shared.yaml
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          sed -i "s/^gitSha: .*/gitSha: \"${{ env.SHORT_SHA }}\"/" charts/app/values-shared.yaml
+          sed -i "s/^  tag: .*/  tag: \"${{ env.SHORT_SHA }}\"/" charts/app/values-shared.yaml
+          git add charts/app/values-shared.yaml
+          if git diff --cached --quiet; then
+            echo "values-shared.yaml already up to date; nothing to commit."
+          else
+            git commit -m "chore: bump shared image to ${{ env.SHORT_SHA }}"
+            git push
+          fi

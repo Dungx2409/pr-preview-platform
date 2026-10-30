@@ -35,10 +35,13 @@ spec:
               image: python:3.10-slim
               command: ["python3", "/app/reaper.py"]
               env:
+                # Safety-net actively reaps orphan/expired previews (not dry-run).
                 - name: DRY_RUN
-                  value: "true"
+                  value: "false"
                 - name: PREVIEW_TTL_HOURS
                   value: "24"
+                - name: PREVIEW_NAMESPACE_PREFIX
+                  value: "preview"
                 - name: GITHUB_REPO
                   value: "Dungx2409/pr-preview-platform"
                 - name: GITHUB_TOKEN

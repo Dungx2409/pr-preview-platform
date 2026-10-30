@@ -19,9 +19,6 @@ permissions:
   pull-requests: write
   deployments: write
 
-env:
-  TAILNET_NAME: taildc1471.ts.net
-
 jobs:
   build-preview:
     name: Build, Scan & Push PR Preview Image
@@ -50,6 +47,7 @@ jobs:
           print('CONFIG_APP_PORT=' + str(cfg.get('app', {}).get('port', 8000)))
           print('CONFIG_APP_HEALTHCHECK=' + str(cfg.get('app', {}).get('healthcheck', '/healthz')))
           print('CONFIG_NS_PREFIX=' + str(cfg.get('namespace', {}).get('prefix', 'preview')))
+          print('CONFIG_TAILNET_NAME=' + str(cfg.get('tailnet', {}).get('name', 'taildc1471.ts.net')))
           " >> "$GITHUB_ENV"
 
       - name: Set Image Name and Tag
@@ -60,9 +58,8 @@ jobs:
           IMAGE_NAME="${CONFIG_APP_IMAGE}"
           echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
           echo "TAG_8=${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_8}" >> "$GITHUB_ENV"
-          echo "TAG_7=${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_7}" >> "$GITHUB_ENV"
           echo "SHORT_SHA=${SHORT_SHA_7}" >> "$GITHUB_ENV"
-          echo "Tags: ${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_8}, ${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_7}"
+          echo "Tag: ${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_8}"
 
       - name: Build local container image
         run: |
@@ -75,7 +72,6 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             --label "org.opencontainers.image.description=${DESC}" \
             -t "${{ env.IMAGE_NAME }}:${{ env.TAG_8 }}" \
-            -t "${{ env.IMAGE_NAME }}:${{ env.TAG_7 }}" \
             "${BUILD_DIR}/"
 
       - name: Scan container image with Trivy
@@ -98,14 +94,13 @@ jobs:
       - name: Push container image to GHCR
         run: |
           docker push "${{ env.IMAGE_NAME }}:${{ env.TAG_8 }}"
-          docker push "${{ env.IMAGE_NAME }}:${{ env.TAG_7 }}"
 
       - name: Upsert PR comment with preview link
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
+          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${{ env.CONFIG_TAILNET_NAME }}/"
           ENV_NAME="${CONFIG_NS_PREFIX}-${PR_NUMBER}"
           MARKER="<!-- pr-preview-platform-comment -->"
 
@@ -122,7 +117,7 @@ jobs:
           | **Status** | Pushed to GHCR; live once Argo CD reconciles (~30–60s) |
 
           > 🔒 **Access Note:** Reachable only by authenticated members
-          > of the Tailscale tailnet (\`${{ env.TAILNET_NAME }}\`).
+          > of the Tailscale tailnet (\`${{ env.CONFIG_TAILNET_NAME }}\`).
           EOF
           )
 
@@ -144,7 +139,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${{ env.TAILNET_NAME }}/"
+          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${{ env.CONFIG_TAILNET_NAME }}/"
           ENV_NAME="${CONFIG_NS_PREFIX}-${PR_NUMBER}"
 
           echo "Creating deployment for environment ${ENV_NAME}..."

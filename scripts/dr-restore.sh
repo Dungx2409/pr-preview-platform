@@ -79,14 +79,20 @@ kubectl apply -f "${REPO_ROOT}/platform/argocd/project-previews.yaml"
 kubectl apply -f "${REPO_ROOT}/platform/argocd/application-shared.yaml"
 
 echo "==> Applying ApplicationSet previews (waiting for CRD discovery)..."
+APPSET_APPLIED=false
 for attempt in {1..6}; do
   if kubectl apply -f "${REPO_ROOT}/platform/argocd/applicationset-previews.yaml"; then
+    APPSET_APPLIED=true
     break
   fi
   echo "    ApplicationSet CRD registering, refreshing discovery cache in 5s (attempt ${attempt}/6)..."
   rm -rf "${HOME}/.kube/cache"
   sleep 5
 done
+if [[ "${APPSET_APPLIED}" != true ]]; then
+  echo "ERROR: Failed to apply ApplicationSet after 6 attempts." >&2
+  exit 1
+fi
 
 # ------------------------------------------------------------------------------
 # 6. Bootstrap Monitoring Stack & Exporter

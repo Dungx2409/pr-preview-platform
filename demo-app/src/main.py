@@ -8,6 +8,7 @@ Implements the contract defined in SPEC §6.6:
 - POST /counter -> increment counter value in DB
 """
 
+import logging
 import os
 import socket
 from contextlib import asynccontextmanager
@@ -15,6 +16,8 @@ from contextlib import asynccontextmanager
 from database import check_db, get_counter, increment_counter, init_db
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
+
+logger = logging.getLogger("demo-app")
 
 
 class RootResponse(BaseModel):
@@ -96,9 +99,10 @@ def read_counter():
         val = get_counter()
         return CounterResponse(counter=val)
     except Exception as e:
+        logger.error("Failed to read counter: %s", e)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database unavailable: {str(e)}",
+            detail="Database unavailable",
         ) from e
 
 
@@ -109,7 +113,8 @@ def update_counter():
         val = increment_counter()
         return CounterResponse(counter=val)
     except Exception as e:
+        logger.error("Failed to increment counter: %s", e)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database unavailable: {str(e)}",
+            detail="Database unavailable",
         ) from e

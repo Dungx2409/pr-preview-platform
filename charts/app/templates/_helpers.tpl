@@ -31,6 +31,15 @@ Create a default fully qualified postgres name.
 {{- end }}
 
 {{/*
+Generate a deterministic per-release postgres password when none is provided.
+Deriving from the release name keeps it stable across Argo CD re-syncs (no
+password churn) while avoiding a shared hardcoded default.
+*/}}
+{{- define "app.postgresPassword" -}}
+{{- .Values.postgres.password | default (printf "%s" .Release.Name | sha256sum | trunc 16) -}}
+{{- end }}
+
+{{/*
 Create chart name and version as used by the chart label.
 */}}
 {{- define "app.chart" -}}

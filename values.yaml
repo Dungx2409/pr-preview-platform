@@ -30,3 +30,8 @@ namespace:
   # Change prefix (e.g. 'preview', 'pr', 'staging') when running multiple projects
   # in parallel on the same cluster to prevent namespace collisions.
   prefix: "preview"
+
+# Tailscale tailnet configuration
+tailnet:
+  # Tailnet name (MagicDNS suffix) used to build preview URLs.
+  name: "taildc1471.ts.net"

@@ -14,7 +14,7 @@ help: ## Display available make targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(CYAN)%-18s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: lint
-lint: check-config lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm lint-trivy ## Run all linters (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm, trivy)
+lint: check-config check-configmaps lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm lint-trivy ## Run all linters (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm, trivy)
 	@echo -e "$(GREEN)✓ All linters passed!$(RESET)"
 
 .PHONY: sync-config
@@ -26,6 +26,16 @@ sync-config: ## Synchronize platform manifests with root values.yaml
 check-config: ## Verify platform manifests are in sync with values.yaml
 	@echo -e "$(CYAN)→ Checking values.yaml synchronization...$(RESET)"
 	@python3 scripts/sync-config.py --check
+
+.PHONY: sync-configmaps
+sync-configmaps: ## Synchronize ConfigMap-embedded scripts with src/
+	@echo -e "$(CYAN)→ Synchronizing ConfigMap-embedded scripts with src/...$(RESET)"
+	@python3 scripts/sync-configmaps.py
+
+.PHONY: check-configmaps
+check-configmaps: ## Verify ConfigMap-embedded scripts match src/
+	@echo -e "$(CYAN)→ Checking ConfigMap-embedded scripts synchronization...$(RESET)"
+	@python3 scripts/sync-configmaps.py --check
 
 .PHONY: bootstrap
 bootstrap: ## End-to-end bootstrap: provision k3s via Ansible and bootstrap all platform services

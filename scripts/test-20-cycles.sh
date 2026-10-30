@@ -73,7 +73,7 @@ spec:
           number: "${PR_ID}"
         image:
           repository: ghcr.io/dungx2409/demo-app
-          tag: "latest"
+          tag: "a55dfe6"  # pinned shared image (no :latest, AGENTS.md §11)
         ingress:
           className: tailscale
           hostname: "${NS_NAME}"

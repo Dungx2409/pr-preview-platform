@@ -32,6 +32,7 @@ def test_get_open_preview_prs() -> None:
     with patch("urllib.request.urlopen") as mock_urlopen:
         mock_resp = MagicMock()
         mock_resp.read.return_value = json_bytes
+        mock_resp.headers.get.return_value = None  # no Link header => single page
         mock_resp.__enter__.return_value = mock_resp
         mock_urlopen.return_value = mock_resp
 

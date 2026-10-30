@@ -70,7 +70,7 @@ kubectl rollout status statefulset/argocd-application-controller -n "${NAMESPACE
 # 6. Rotate initial admin password if ARGOCD_ADMIN_PASSWORD provided
 if [[ -n "${ARGOCD_ADMIN_PASSWORD:-}" ]]; then
   echo "==> Rotating initial admin password..."
-  BCRYPT_HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'''${ARGOCD_ADMIN_PASSWORD}''', bcrypt.gensalt()).decode())")
+  BCRYPT_HASH=$(ARGOCD_ADMIN_PASSWORD="${ARGOCD_ADMIN_PASSWORD}" python3 -c 'import bcrypt, os; print(bcrypt.hashpw(os.environ["ARGOCD_ADMIN_PASSWORD"].encode("utf-8"), bcrypt.gensalt()).decode())')
   MTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
   kubectl -n "${NAMESPACE}" patch secret argocd-secret \

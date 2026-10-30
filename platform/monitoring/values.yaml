@@ -77,7 +77,8 @@ prometheus:
 # ------------------------------------------------------------------------------
 grafana:
   enabled: true
-  adminPassword: "admin"
+  # adminPassword omitted: the chart auto-generates a random password stored
+  # in secret kube-prometheus-stack-grafana (see install-monitoring.sh).
   defaultDashboardsEnabled: true
   defaultDashboardsTimezone: utc
 

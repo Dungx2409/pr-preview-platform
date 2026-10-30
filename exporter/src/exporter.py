@@ -19,7 +19,7 @@ import os
 import re
 import signal
 import ssl
-import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -35,23 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger("preview-exporter")
 
 
-def load_central_config() -> dict[str, Any]:
-    config_file = os.environ.get("CONFIG_FILE", "values.yaml")
-    if os.path.exists(config_file):
-        try:
-            import yaml  # type: ignore
-
-            with open(config_file) as f:
-                return yaml.safe_load(f) or {}
-        except Exception:
-            pass
-    return {}
-
-
-_CONFIG = load_central_config()
-_PREFIX = os.environ.get("PREVIEW_NAMESPACE_PREFIX") or _CONFIG.get("namespace", {}).get(
-    "prefix", "preview"
-)
+_PREFIX = os.environ.get("PREVIEW_NAMESPACE_PREFIX", "preview")
 PR_NS_PATTERN = (
     re.compile(rf"^(?:{re.escape(_PREFIX)}|pr|preview)-(\d+)$")
     if _PREFIX not in ("pr", "preview")
@@ -91,11 +75,7 @@ class K8sClient:
         ca_file: str = "",
         timeout: float = 10.0,
     ) -> None:
-        self.api_server = (
-            api_server
-            or os.environ.get("KUBERNETES_SERVICE_HOST_URL")
-            or "https://kubernetes.default.svc"
-        ).rstrip("/")
+        self.api_server = (api_server or "https://kubernetes.default.svc").rstrip("/")
         self.token = token or os.environ.get("K8S_TOKEN", "")
         self.ca_file = ca_file or os.environ.get("K8S_CA_FILE", "")
         self.timeout = timeout
@@ -115,8 +95,8 @@ class K8sClient:
         self.ssl_context = ssl.create_default_context()
         if self.ca_file and os.path.exists(self.ca_file):
             self.ssl_context.load_verify_locations(cafile=self.ca_file)
-        elif self.api_server.startswith("https://") and not self.ca_file:
-            # Local development fallback if without CA bundle
+        elif os.environ.get("INSECURE_SKIP_TLS_VERIFY", "").lower() in ("1", "true", "yes"):
+            # Explicit opt-in for local development without a CA bundle.
             self.ssl_context.check_hostname = False
             self.ssl_context.verify_mode = ssl.CERT_NONE
 
@@ -340,7 +320,7 @@ class ExporterHandler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         """Custom log format suppressing high-frequency /metrics log spam."""
-        if "/metrics" in args[0] if args else False:
+        if args and "/metrics" in args[0]:
             return
         logger.info("%s - %s", self.client_address[0], format % args)
 
@@ -355,8 +335,9 @@ def run_server(port: int = 8000, collector: PreviewCollector | None = None) -> N
 
     def shutdown_handler(signum: int, frame: Any) -> None:
         logger.info("Received signal %d, shutting down exporter...", signum)
-        server.shutdown()
-        sys.exit(0)
+        # shutdown() must run in a thread other than the one blocked in
+        # serve_forever() (the main thread here), otherwise it deadlocks.
+        threading.Thread(target=server.shutdown, daemon=True).start()
 
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)

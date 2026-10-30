@@ -107,7 +107,7 @@ postgres:
   service:
     port: 5432
   user: postgres
-  password: "preview-pg-secret"
+  password: ""  # empty => auto-generated per-release (see app.postgresPassword helper)
   database: appdb
   podSecurityContext:
     runAsNonRoot: true

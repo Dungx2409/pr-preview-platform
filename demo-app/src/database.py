@@ -4,13 +4,17 @@ Supports PostgreSQL via psycopg2-binary and SQLite for local development/testing
 Enforces atomic operations for per-environment database isolation verification.
 """
 
+import logging
 import os
 import sqlite3
+from contextlib import closing
 
 try:
     import psycopg2
 except ImportError:
     psycopg2 = None
+
+logger = logging.getLogger("demo-app.database")
 
 _sqlite_conn: sqlite3.Connection | None = None
 
@@ -73,7 +77,7 @@ def init_db() -> bool:
             return True
 
         if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
-            with _get_connection() as conn:
+            with closing(_get_connection()) as conn, conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "CREATE TABLE IF NOT EXISTS counters "
@@ -82,7 +86,8 @@ def init_db() -> bool:
             return True
 
         return False
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to initialize database schema: %s", e)
         return False
 
 
@@ -100,7 +105,7 @@ def check_db() -> bool:
                 return cur.fetchone()[0] == 1
 
         if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
-            with _get_connection() as conn:
+            with closing(_get_connection()) as conn, conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1;")
                     res = cur.fetchone()
@@ -127,7 +132,7 @@ def get_counter() -> int:
             return row[0] if row else 0
 
     if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
-        with _get_connection() as conn:
+        with closing(_get_connection()) as conn, conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT count FROM counters WHERE id = 1;")
                 row = cur.fetchone()
@@ -158,7 +163,7 @@ def increment_counter() -> int:
             return row[0]
 
     if db_url.startswith("postgresql://") or db_url.startswith("postgres://"):
-        with _get_connection() as conn:
+        with closing(_get_connection()) as conn, conn:
             with conn.cursor() as cur:
                 cur.execute(query)
                 row = cur.fetchone()

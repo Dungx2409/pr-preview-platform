@@ -12,12 +12,10 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  contents: read
   packages: write
   pull-requests: write
   deployments: write
-
-env:
-  TAILNET_NAME: taildc1471.ts.net
 
 jobs:
   teardown-preview:
