@@ -203,12 +203,65 @@ To adapt this preview platform to any other repository/project:
 
 This guide walks through setting up the platform from scratch — whether you are reproducing the system on your own machine or onboarding a brand new Git repository.
 
-### Prerequisites & Required Credentials
-1. **Local System Tools:** Linux or macOS with `ansible-playbook`, `kubectl`, `helm`, `git`, `python3` (with `pyyaml`), and **VirtualBox 7.0+** (if provisioning the VM).
-2. **Third-Party Credentials (Never committed to Git):**
-   - **Tailscale Account:** Free account with MagicDNS + HTTPS enabled. Create an **OAuth Client** under *Tailscale Admin Console → Settings → OAuth Clients* with scopes `devices:write` and `auth:read` (tagged `tag:k8s-operator`).
-   - **GitHub Personal Access Token (PAT):** A classic PAT or fine-grained token with `repo` or `pull_requests:read` scope (used by Argo CD ApplicationSet to poll PRs without hitting GitHub API rate limits).
-   - **Database Secret:** Master password for the shared Tier 1 Postgres database.
+### Prerequisites
+
+Ensure the following tools and compatible versions are installed on your workstation. Versions match the cluster configurations defined in [`docs/versions.md`](docs/versions.md):
+
+| Requirement | Minimum / Recommended | Check | Install |
+|---|---|---|---|
+| **Python** | `3.10+` | `python3 --version` | [python.org](https://www.python.org/downloads/) |
+| **uv** *(recommended)* | `any` | `uv --version` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **pipx** *(alternative)* | `any` | `pipx --version` | `pip install pipx` |
+| **Ansible Core** | `2.16+` (pinned `2.16.19`) | `ansible --version` | `uv tool install ansible-core==2.16.19` or `pipx install --include-deps ansible-core==2.16.19` |
+| **Helm** | `v3.12+` (pinned `v3.22.1`) | `helm version --short` | `curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \| bash` |
+| **kubectl** | `v1.28+` (tested `v1.35.9`) | `kubectl version --client` | [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) (compatible with k3s `v1.36.5`) |
+| **VirtualBox** *(if VM)* | `7.0+` (tested `7.2.10`) | `VBoxManage --version` | [virtualbox.org](https://www.virtualbox.org/wiki/Downloads) |
+
+#### Quick Install by Operating System
+
+**macOS quick install (Homebrew):**
+```bash
+brew install python@3.12 uv helm kubernetes-cli
+uv tool install --with ansible-core==2.16.19 ansible
+# or with pipx:
+# brew install pipx && pipx install --include-deps ansible-core==2.16.19
+```
+
+**Windows quick install:**
+```powershell
+winget install astral-sh.uv
+winget install Kubernetes.kubectl
+winget install Helm.Helm
+winget install Oracle.VirtualBox
+```
+> [!NOTE]
+> **Ansible on Windows:** Ansible requires a POSIX environment. Run Ansible inside **WSL2 (Ubuntu)** (`wsl --install -d Ubuntu`) using the Ubuntu/Debian instructions below.
+
+**Ubuntu / Debian:**
+```bash
+sudo apt update && sudo apt install -y python3.12 python3-pip pipx curl git make
+# or install uv:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install pinned Ansible Core (via uv or pipx to avoid system Python conflicts):
+uv tool install ansible-core==2.16.19
+# or with pipx:
+pipx install --include-deps ansible-core==2.16.19
+
+# Install kubectl (v1.35.9 - matching k3s v1.36.5):
+curl -LO "https://dl.k8s.io/release/v1.35.9/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl
+
+# Install Helm (v3):
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+---
+
+### Required Third-Party Credentials (Never committed to Git)
+- **Tailscale Account:** Free account with MagicDNS + HTTPS enabled. Create an **OAuth Client** under *Tailscale Admin Console → Settings → OAuth Clients* with scopes `devices:write` and `auth:read` (tagged `tag:k8s-operator`).
+- **GitHub Personal Access Token (PAT):** A classic PAT or fine-grained token with `repo` or `pull_requests:read` scope (used by Argo CD ApplicationSet to poll PRs without hitting GitHub API rate limits).
+- **Database Secret:** Master password for the shared Tier 1 Postgres database.
 
 ---
 
