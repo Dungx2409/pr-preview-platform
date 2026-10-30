@@ -3,11 +3,11 @@
 env: shared
 pr:
   number: ""
-gitSha: "a55dfe6"
+gitSha: "55c3886"
 
 image:
   repository: ghcr.io/dungx2409/demo-app
-  tag: "a55dfe6"
+  tag: "55c3886"
   pullPolicy: Always
 
 ingress:
