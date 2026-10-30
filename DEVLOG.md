@@ -139,6 +139,7 @@
 - Added `pull-requests: write` to workflow permissions.
 - Switched from direct branch commit to branch `automation/bump-shared-${SHORT_SHA}`.
 - Automated creation of PR against `main` using GitHub CLI `gh pr create` with `${{ secrets.GITHUB_TOKEN }}`.
+- Updated `README.md` (Sections 4 & 7) to include `build.yml` alongside `preview.yml`/`preview-closed.yml` for multi-repo onboarding (Tier 1 Shared environment) and documented required PR creation permissions.
 **Why this approach:** Direct pushes to `main` fail under GitHub Branch Protection rules (`GH006: Protected branch update failed`). Opening an automated PR adheres to branch protection policies while still allowing automated version tracking for the Tier 1 shared environment.
 **Verified:** `yamllint -c .yamllint.yaml .github/workflows/build.yml` passed with 0 errors and 0 warnings.
 **Gotchas / decisions:** GitHub Actions token (`GITHUB_TOKEN`) requires "Allow GitHub Actions to create and approve pull requests" enabled in repo Settings -> Actions -> General -> Workflow permissions to call `gh pr create`.

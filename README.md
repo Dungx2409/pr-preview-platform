@@ -134,12 +134,15 @@ To adapt this preview platform to any other repository or microservice:
 
 #### Part B: In Your Target Application Repository
 In order for your application repository to automatically build container images, comment preview URLs on PRs, and clean up on close, the following files and settings must be present in the app repository:
-1. **Copy GitHub Actions Workflows:** Copy `.github/workflows/preview.yml` and `.github/workflows/preview-closed.yml` from this repository into your application repository's `.github/workflows/` directory.
+1. **Copy GitHub Actions Workflows:** Copy the workflows from this repository into your application repository's `.github/workflows/` directory:
+   - `.github/workflows/build.yml` — Builds and scans image on `main` push and creates automated PR to bump `values-shared.yaml` (Tier 1 Shared environment).
+   - `.github/workflows/preview.yml` — Builds and pushes preview images, sets GitHub Deployment status, and posts preview URLs on PRs with label `preview` (Tier 2).
+   - `.github/workflows/preview-closed.yml` — Cleans up GHCR tags, marks deployment inactive, and posts teardown summary when PR closes or label is removed.
 2. **Copy Centralized Configuration:** Copy `values.yaml` into the root of your application repository so the CI workflows can resolve image names, tags, and namespace prefixes.
 3. **Copy Helm Chart (if standalone):** Ensure your application repository contains the Helm chart under `charts/app/` (or retain it in the platform repository if using a centralized chart model).
 4. **Configure GitHub Repository Permissions:**
    - **Label:** Create the PR label `preview` in your repository (*Issues -> Labels -> New label*).
-   - **Workflow Permissions:** Navigate to *Settings -> Actions -> General -> Workflow permissions* and select **"Read and write permissions"** (required for GitHub Actions to push container images to GHCR, comment preview URLs on PRs, and update GitHub Deployment statuses).
+   - **Workflow Permissions:** Navigate to *Settings -> Actions -> General -> Workflow permissions* and select **"Read and write permissions"** and check **"Allow GitHub Actions to create and approve pull requests"** (required for `build.yml` to automatically open bump PRs, and `preview.yml` to push container images to GHCR and comment preview URLs on PRs).
    - **GHCR Visibility:** After the first PR workflow runs, ensure your GHCR container package visibility is set to **Public** (*Package Settings -> Change package visibility -> Public*) so the k3s cluster can pull images without needing private registry credentials.
    - **Tailnet Name:** In `.github/workflows/preview.yml` and `preview-closed.yml`, ensure `TAILNET_NAME` matches your Tailscale tailnet domain (e.g. `<tailnet-name>.ts.net`).
 
@@ -308,10 +311,11 @@ Commit and push the changes: `git commit -am "chore: adapt platform to <your-rep
 
 #### 2. Set Up Your Target Application Repository
 In order for your application repository to automatically trigger preview builds and lifecycle teardown when PRs are opened and closed:
-1. **Copy Workflows & Configuration:** Copy `.github/workflows/preview.yml`, `.github/workflows/preview-closed.yml`, and `values.yaml` into your application repository:
+1. **Copy Workflows & Configuration:** Copy the workflows, configuration, and charts into your application repository:
    ```bash
    # From your application repository root:
    mkdir -p .github/workflows
+   cp /path/to/pr-preview-platform/.github/workflows/build.yml .github/workflows/
    cp /path/to/pr-preview-platform/.github/workflows/preview.yml .github/workflows/
    cp /path/to/pr-preview-platform/.github/workflows/preview-closed.yml .github/workflows/
    cp /path/to/pr-preview-platform/values.yaml ./values.yaml
@@ -320,7 +324,7 @@ In order for your application repository to automatically trigger preview builds
 2. **Configure Tailnet Name:** In `.github/workflows/preview.yml` and `preview-closed.yml`, set `TAILNET_NAME` to your Tailscale tailnet domain (e.g. `<tailnet-name>.ts.net`).
 3. **Repository Settings & Permissions:**
    - **Label:** Create label `preview` in your GitHub repository (*Issues -> Labels -> New label*).
-   - **Workflow Permissions:** In *Settings -> Actions -> General -> Workflow permissions*, select **Read and write permissions** (required to push images to GHCR, post PR comments, and manage deployment statuses).
+   - **Workflow Permissions:** In *Settings -> Actions -> General -> Workflow permissions*, select **Read and write permissions** and enable **Allow GitHub Actions to create and approve pull requests** (required for `build.yml` to automatically open bump PRs, and `preview.yml` to push images and post PR comments).
    - **Package Visibility:** After the first PR push, navigate to your GitHub Profile / Org *Packages*, select the package, open *Package settings*, and set visibility to **Public** so k3s can pull images without requiring private credentials.
 
 ---
