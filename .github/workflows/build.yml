@@ -17,6 +17,7 @@ concurrency:
 permissions:
   contents: write
   packages: write
+  pull-requests: write
 
 jobs:
   build-and-push:
@@ -78,16 +79,32 @@ jobs:
         run: |
           docker push "${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
 
-      - name: Bump shared image tag in values-shared.yaml
+      - name: Create PR to bump shared image tag in values-shared.yaml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           sed -i "s/^gitSha: .*/gitSha: \"${{ env.SHORT_SHA }}\"/" charts/app/values-shared.yaml
           sed -i "s/^  tag: .*/  tag: \"${{ env.SHORT_SHA }}\"/" charts/app/values-shared.yaml
-          git add charts/app/values-shared.yaml
-          if git diff --cached --quiet; then
+
+          if git diff --quiet charts/app/values-shared.yaml; then
             echo "values-shared.yaml already up to date; nothing to commit."
-          else
-            git commit -m "chore: bump shared image to ${{ env.SHORT_SHA }}"
-            git push
+            exit 0
+          fi
+
+          BRANCH_NAME="automation/bump-shared-${{ env.SHORT_SHA }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$BRANCH_NAME"
+          git add charts/app/values-shared.yaml
+          git commit -m "chore: bump shared image to ${{ env.SHORT_SHA }}"
+          git push -u origin "$BRANCH_NAME" --force
+
+          if ! gh pr view "$BRANCH_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh pr create \
+              --repo "${{ github.repository }}" \
+              --base main \
+              --head "$BRANCH_NAME" \
+              --title "chore: bump shared image to ${{ env.SHORT_SHA }}" \
+              --body "Automated PR from build.yml to update values-shared.yaml (${{ env.SHORT_SHA }})."
           fi
