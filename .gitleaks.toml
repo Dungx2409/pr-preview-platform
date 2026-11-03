@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore graphify analysis output and local caches"
+paths = [
+    '''^graphify-out/''',
+]
