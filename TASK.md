@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 7 — Docs, demo, CV, team onboarding (T-7.3 Demo assets)**
+**→ Phase 7 complete · Awaiting owner demo recording (T-7.3) / Phase 8 — Optional cloud variant**
 
 ---
 
@@ -150,7 +150,7 @@
 - [x] **T-7.2** 🤖 **Docs** — README (problem, diagram, quickstart, results, limitations incl. "host PC must be on", Tailscale limits), `architecture.md`, `runbook.md`, `security.md`, `decisions.md`.
   - *Acceptance:* a stranger can understand the system and reproduce it with their own tailnet.
 
-- [ ] **T-7.3** 👤 **Demo assets** — screen recording/GIF of open PR → private link → update → close; Grafana screenshots into `docs/img/`.
+- [~] **T-7.3** 👤 **Demo assets** — specifications, guides, and README placeholders prepared in `docs/img/`; awaiting owner recording of screen capture/GIF and Grafana screenshots.
 
 - [x] **T-7.4** 🤝 **`docs/cv-notes.md`** — measured bullets (real numbers), 8–10 likely interview Q&As, "what I'd improve next".
   - *Acceptance:* every number traces to the DEVLOG Metrics table.

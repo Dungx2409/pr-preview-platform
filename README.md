@@ -552,12 +552,20 @@ make bootstrap-platform
 ```
 1. Developer creates a branch and opens a Pull Request on GitHub.
 2. Developer attaches the label 'preview' to the PR.
-3. GitHub Actions builds the image and pushes to GHCR.
-4. Argo CD detects the label and provisions 'pr-<N>' in the cluster.
-5. Tailscale registers MagicDNS name 'https://pr-<N>.<tailnet>.ts.net' with valid HTTPS.
+3. GitHub Actions builds the image, scans with Trivy, and pushes to GHCR.
+4. Argo CD detects the label and provisions 'preview-<N>' in the cluster.
+5. Tailscale registers MagicDNS name 'https://preview-<N>.<tailnet>.ts.net' with valid HTTPS.
 6. Reviewer clicks the preview link directly in the PR comment to test the live feature.
 7. Closing or merging the PR instantly deletes the namespace and revokes the Tailscale node.
 ```
+
+### Visual Demonstrations & Dashboards
+
+> Visual assets and step-by-step recording instructions are documented in [`docs/img/`](docs/img/README.md).
+
+| Preview Lifecycle Walkthrough | Observability & Cluster Health |
+|---|---|
+| ![PR Preview Lifecycle](docs/img/preview-lifecycle.gif)<br><sub>*End-to-end PR preview provisioning, verification, and teardown*</sub> | ![Grafana Metrics Dashboard](docs/img/grafana-dashboard.png)<br><sub>*Real-time metrics: Time-to-Ready, active environments, and memory headroom*</sub> |
 
 ---
 
@@ -601,6 +609,9 @@ To maintain architectural transparency, the platform intentionally makes specifi
 - [System Architecture](docs/architecture.md) — Comprehensive component topology, networking model, and sequence diagrams.
 - [Security Matrix & Threat Model](docs/security.md) — Zero-trust access controls, container hardening, and empirical security test results.
 - [Operations & Runbook](docs/runbook.md) — Standard Operating Procedures (SOP), troubleshooting guides, and Disaster Recovery protocol.
+- [Team & Multi-Repo Onboarding](docs/onboarding.md) — Runbook for onboarding teammates and integrating external application repositories.
+- [CV Notes & Interview Guide](docs/cv-notes.md) — Metrics-verified resume bullets, 10 deep technical interview Q&As, and trade-off analysis.
+- [Demo Assets & Visual Guide](docs/img/README.md) — Specifications, tools, and checklist for demo recordings and dashboard screenshots.
 - [Architecture Decision Records (ADRs)](docs/decisions.md) — Technical evaluations, rejected alternatives, and trade-off rationales.
 - [Pinned Component Versions](docs/versions.md) — Explicit versions for Kubernetes, Helm charts, Python packages, and linters.
 
