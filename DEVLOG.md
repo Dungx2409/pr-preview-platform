@@ -134,6 +134,23 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-11-04 — T-7.5 — Team onboarding and multi-repository integration guide
+**Did:** Authored `docs/onboarding.md` providing an end-to-end operational guide for onboarding teammates and integrating external application repositories (public or private):
+- Formulated GitHub repository setup requirements (trigger label `preview`, GitHub Actions write permissions, GHCR visibility management).
+- Provided production-ready workflow templates (`preview.yml` and `preview-closed.yml`) with Trivy vulnerability gates, dual SHA tagging (`pr-<N>-<sha7>` and `pr-<N>-<sha8>`), automated PR comments with private links, and package cleanup.
+- Documented single-repo reconfiguration via `make init` / `make sync-config` and multi-repo parallel hosting via dedicated `ApplicationSet` manifests and `AppProject` source repository whitelisting.
+- Detailed handling of private repositories (`argocd.argoproj.io/secret-type=repository`) and private GHCR images (`imagePullSecrets`).
+- Analyzed Tailscale Personal free plan constraints (3 users max) and documented 3 scaling strategies for 4–5 person student teams (Tailscale Node Sharing via `tailscale.com/share` [free & unlimited], GitHub Org tailnet, and Tailscale Starter).
+- Formulated step-by-step Tailscale ACL policy configurations for `group:reviewers` and end-to-end access verification checklists (positive and negative curl tests).
+**Why this approach:** Makes the preview platform genuinely reusable for student teams and external repositories without modifying core platform code. Clear workflow templates and permission guidelines prevent common pitfalls (GHCR access denied, missing ACL groups, namespace collisions).
+**Verified:**
+- `make lint`: 100% clean across yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm lint, and trivy.
+- `make test`: 39/39 unit tests passed.
+**Gotchas / decisions:**
+- *Decision:* Documented Tailscale Node Sharing as the primary recommended strategy for student teams exceeding the 3-user free plan cap, enabling unlimited external reviewers to access preview nodes without consuming personal tailnet user seats.
+**Learned (interview note):** I can explain platform multi-tenancy and repository federation: by separating the GitOps control plane (`pr-preview-platform`) from application source repos, parameterized ApplicationSets allow one Kubernetes cluster to securely host preview environments for multiple separate services while maintaining namespace and network isolation.
+**Next:** T-7.3 — Demo assets (👤 owner task: screen recording and Grafana screenshots).
+
 ### 2026-11-04 — T-7.4 — Create CV notes and technical interview preparation guide
 **Did:** Created `docs/cv-notes.md` providing a comprehensive, metrics-verified cheat sheet for CV preparation and technical DevOps/Platform engineering interviews:
 - Formulated 10 tailored resume bullets across Core DevOps/GitOps and Performance/Reliability focuses, each with exact quantified metrics from DEVLOG.
