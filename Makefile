@@ -9,9 +9,19 @@ YELLOW := \033[33m
 RED := \033[31m
 RESET := \033[0m
 
+ARGS ?=
+
 .PHONY: help
 help: ## Display available make targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(CYAN)%-18s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+.PHONY: init
+init: ## Interactive setup wizard for values.yaml, workflows, and secrets
+	@python3 scripts/init.py $(ARGS)
+
+.PHONY: doctor
+doctor: ## Run preflight and diagnostic health checks
+	@python3 scripts/doctor.py $(ARGS)
 
 .PHONY: lint
 lint: check-config check-configmaps lint-yaml lint-ansible lint-shell lint-python lint-secrets lint-helm lint-trivy ## Run all linters (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm, trivy)
@@ -39,6 +49,7 @@ check-configmaps: ## Verify ConfigMap-embedded scripts match src/
 
 .PHONY: bootstrap
 bootstrap: ## End-to-end bootstrap: provision k3s via Ansible and bootstrap all platform services
+	@echo -e "$(YELLOW)Hint: Run 'make doctor' first to verify preflight dependencies.$(RESET)"
 	@echo -e "$(CYAN)→ Starting end-to-end platform bootstrap...$(RESET)"
 	@bash scripts/dr-restore.sh
 
