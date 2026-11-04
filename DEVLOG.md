@@ -134,6 +134,24 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-11-04 — T-7.3 — Create demo assets guidelines and visual layout
+**Did:** Prepared visual portfolio infrastructure and operational recording instructions in `docs/img/`:
+- Authored `docs/img/README.md` defining the 4 core demo assets:
+  1. `preview-lifecycle.gif`: 45–60s end-to-end walkthrough (open PR → label `preview` → CI build & push → bot comment → live HTTPS preview with DB counter → PR closed → complete teardown).
+  2. `grafana-dashboard.png`: High-resolution capture of the live Grafana metrics dashboard (active previews, p50 TTR, 51.3% RAM headroom, resource utilization per namespace).
+  3. `argocd-previews.png`: Argo CD UI showing the ApplicationSet and synced/healthy preview applications with their Kubernetes resource trees.
+  4. `tailscale-admin.png`: Tailscale Admin Console displaying authenticated `tag:k8s` Ingress proxy nodes.
+- Provided recommended Linux screen recording tools (`kooha`, `obs-studio`, `peek`) and palette-optimized `ffmpeg` conversion commands to keep animated GIFs crisp and under 10 MB.
+- Updated `README.md` (Section 8: Developer & Reviewer Workflow) with a dedicated "Visual Demonstrations & Dashboards" subsection and updated Section 11 Documentation Index with links to `docs/img/`, `docs/onboarding.md`, and `docs/cv-notes.md`.
+**Why this approach:** Provides clear, actionable capture steps for the owner to record real cluster demonstrations without guessing screen dimensions, tools, or storylines, ensuring high-impact visual proof for recruiters and interviewers.
+**Verified:**
+- `make lint`: 100% clean across yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm lint, and trivy.
+- `make test`: 39/39 unit tests passed.
+**Gotchas / decisions:**
+- *Decision:* Replaced static markdown text in README section 8 with an aesthetic two-column table referencing the preview lifecycle GIF and Grafana metrics dashboard.
+**Learned (interview note):** I can explain the importance of visual communication in platform engineering: clear GIF walkthroughs and observability dashboard screenshots transform complex distributed systems into digestible, demonstrable portfolios that prove real-world deployment and operational reliability.
+**Next:** Owner captures the demo recording and screenshots (👤 T-7.3); optionally proceed to Phase 8 (cloud variant).
+
 ### 2026-11-04 — T-7.5 — Team onboarding and multi-repository integration guide
 **Did:** Authored `docs/onboarding.md` providing an end-to-end operational guide for onboarding teammates and integrating external application repositories (public or private):
 - Formulated GitHub repository setup requirements (trigger label `preview`, GitHub Actions write permissions, GHCR visibility management).
