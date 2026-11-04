@@ -210,6 +210,10 @@ In order for your application repository to automatically build container images
 │   └── tailscale/              # Tailscale Operator Helm values and ACL snippets
 ├── reaper/                     # Python source code and unit tests for the janitor daemon
 ├── scripts/                    # Automation scripts (sync config, stress testing, audit, DR restore)
+│   ├── preview_cli/            # Standard-library CLI engine for init wizard and doctor diagnostics
+│   ├── init.py                 # Thin entrypoint for make init
+│   └── doctor.py               # Thin entrypoint for make doctor
+├── tests/                      # Unit tests for CLI engine and diagnostic checks
 └── values.yaml                 # Centralized single-source-of-truth project configuration
 ```
 
@@ -281,7 +285,146 @@ curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 |
 
 ---
 
-### Step 1: Clone & Configure Target Project
+### Step 1: Initialize Project Configuration (`make init`)
+
+Clone the platform repository on your management workstation or VM host:
+```bash
+git clone https://github.com/Dungx2409/pr-preview-platform.git
+cd pr-preview-platform
+```
+
+Run the interactive setup wizard:
+```bash
+make init
+```
+The wizard prompts for your repository details, container settings, tailnet domain, and credentials in one seamless pass:
+- Updates `values.yaml` preserving comments and structure.
+- Sets `TAILNET_NAME` consistently in `.github/workflows/preview.yml` and `preview-closed.yml`.
+- Configures target host IP and SSH user in `ansible/inventory/local.ini`.
+- Renders out-of-band Disaster Recovery secrets directly into `~/.config/pr-preview/dr-secrets/` with strict `0600` permissions (dir `0700`).
+- Automatically runs `make sync-config` to synchronize Argo CD ApplicationSet and AppProject manifests.
+- Runs post-init preflight diagnostic checks.
+
+#### Non-Interactive Automation (`--non-interactive`)
+For automated CI environments or scripted headless provisioning, pass `--non-interactive` with environment variables:
+```bash
+make init ARGS="--non-interactive"
+```
+Or execute the script directly:
+```bash
+python3 scripts/init.py --non-interactive
+```
+
+Supported environment variables:
+
+| Variable | Description | Example |
+|---|---|---|
+| `PREVIEW_REPO_URL` | GitHub HTTPS repository clone URL | `https://github.com/my-org/my-app.git` |
+| `PREVIEW_APP_NAME` | Name of application / GHCR package | `demo-app` |
+| `PREVIEW_IMAGE` | Full container image path (lowercase) | `ghcr.io/my-org/demo-app` |
+| `PREVIEW_PORT` | Container listening port (1–65535) | `8000` |
+| `PREVIEW_HEALTHCHECK` | Liveness probe endpoint | `/healthz` |
+| `PREVIEW_NS_PREFIX` | Prefix for preview namespaces | `preview` |
+| `PREVIEW_TAILNET` | Tailscale tailnet domain suffix | `taildc1471.ts.net` |
+| `PREVIEW_VM_IP` | VirtualBox VM / Server IP | `192.168.56.10` |
+| `TS_OAUTH_CLIENT_ID` | Tailscale OAuth Client ID | `tskey-client-...` |
+| `TS_OAUTH_CLIENT_SECRET` | Tailscale OAuth Client Secret | `tskey-secret-...` |
+| `GITHUB_TOKEN` | GitHub PAT for PR polling & reaper | `ghp_...` |
+| `PREVIEW_SSH_USER` *(optional)* | Ansible SSH user (default `vboxuser`) | `vboxuser` |
+| `PREVIEW_DB_PASSWORD` *(optional)* | Shared Postgres password (auto-generated if omitted) | `my-strong-password` |
+
+You can also preview changes without writing any files using dry-run mode:
+```bash
+make init ARGS="--dry-run"
+```
+
+---
+
+### Step 2: Validate Preflight Health (`make doctor`)
+
+Before touching cloud resources or provisioning virtual machines, run `make doctor` to verify tools, configs, network connectivity, and permissions:
+```bash
+make doctor
+```
+
+`make doctor` runs 8 comprehensive diagnostic groups:
+1. **Toolchain & System Binaries (`tools`):** Verifies installed versions against [`docs/versions.md`](docs/versions.md) (Python 3.10+, uv/pipx, ansible-core, helm, kubectl, make, git, and VirtualBox if local VM).
+2. **Centralized Configuration (`config`):** Validates `values.yaml` schema, URL formats, DNS labels, manifest synchronization, and workflow `TAILNET_NAME` parity.
+3. **DR Secrets & Credentials (`secrets`):** Verifies `~/.config/pr-preview/dr-secrets/` directory permissions (`0700`) and individual secret files (`0600`) or environment variables.
+4. **GitHub API & Permissions (`github`):** Authenticates token via `GET /user`, validates repository access, checks label `preview`, tests workflow permissions, and audits rate limits.
+5. **GHCR Package Visibility (`ghcr`):** Requests an anonymous pull token and verifies the container image is publicly pullable without authentication.
+6. **Tailscale & Private Networking (`tailscale`):** Authenticates OAuth credentials via `client_credentials` grant, checks tailnet format, and verifies host CLI status.
+7. **Host Connectivity (`host`):** Parses Ansible inventory and tests TCP port 22 (SSH) reachability to the target VM/server.
+8. **In-Cluster Health (`cluster`):** Tests Kubernetes API connectivity, node Ready state, core namespace pod health (`argocd`, `tailscale`, `monitoring`, `shared`), ApplicationSet, AppProject, Reaper CronJob, and checks for lingering namespaces older than TTL.
+
+---
+
+### Step 3: One-Command Bootstrap
+
+#### Scenario 1: Provision Clean VM + Cluster + Platform from Scratch
+Run Ansible to configure the VirtualBox VM, install k3s, set up Kubeconfig, and bootstrap all platform engines:
+```bash
+make bootstrap
+```
+*Total elapsed time: ~12–15 minutes.*
+
+#### Scenario 2: Bootstrap Platform Services Only (Existing Kubernetes Cluster)
+If you already have a running k3s or Kubernetes cluster connected via `KUBECONFIG`:
+```bash
+export KUBECONFIG="${HOME}/.kube/pr-preview.yaml" # or ~/.kube/config
+make bootstrap-platform
+```
+
+---
+
+### Troubleshooting with `make doctor`
+
+If any stage fails or an unexpected issue arises, `make doctor` isolates the exact root cause with concrete fix instructions.
+
+#### Example Diagnostic Output:
+```text
+=== PR Preview Platform - Preflight Health Doctor (0.42s) ===
+
+[Toolchain & System Binaries]
+  [PASS] Python runtime: Python 3.10.12 (>= 3.10 required)
+  [PASS] Helm package manager: 'helm' version 3.22.1 (ok)
+  [PASS] Kubernetes CLI (kubectl): 'kubectl' version 1.35.10 (ok)
+
+[Centralized Configuration (values.yaml)]
+  [PASS] Root values.yaml format: values.yaml parses cleanly
+  [PASS] Manifest synchronization: Argo CD manifests are synchronized with values.yaml
+
+[Disaster Recovery Secrets & Environment Variables]
+  [PASS] DR Secrets directory permissions: ~/.config/pr-preview/dr-secrets has secure permissions (0700)
+  [PASS] Tailscale Operator OAuth credentials: operator-oauth.yaml present (0600) with required keys
+
+[GHCR Anonymous Package Visibility]
+  [FAIL] GHCR package visibility: Package 'demo-app' is Private (anonymous pull token denied)
+         Fix: Navigate to https://github.com/users/owner/packages/container/demo-app/settings and change visibility to Public
+
+Doctor summary: 24 passed, 2 warnings, 1 failed, 0 skipped (0.42s)
+Result: Preflight checks encountered failures. Review the fix hints above.
+```
+
+#### Diagnostic Flags & Usage:
+- `make doctor ARGS="--offline"`: Skips remote API calls (GitHub, GHCR, Tailscale) to diagnose local configurations without internet.
+- `make doctor ARGS="--skip-cluster"`: Skips in-cluster Kubernetes checks (useful before cluster bootstrap).
+- `make doctor ARGS="--only <group>"`: Runs a specific group only (`tools`, `config`, `secrets`, `github`, `ghcr`, `tailscale`, `host`, `cluster`).
+- `make doctor ARGS="--json"`: Emits machine-readable JSON results.
+- **Exit codes:**
+  - `0`: All checks passed (or warnings only; warnings never fail the run).
+  - `1`: At least one check failed.
+  - `2`: Doctor usage error or unhandled crash.
+
+> [!TIP]
+> **Secret-Safe Diagnostics:** `make doctor` automatically sanitizes output using token redaction patterns (`ghp_*`, `github_pat_*`, `tskey-*`, Bearer tokens). You can safely paste the output into GitHub Issues or discussions when asking for assistance.
+
+---
+
+### Manual Configuration (Advanced)
+
+<details>
+<summary>Click to view manual configuration steps (alternative to <code>make init</code>)</summary>
 
 #### 1. Configure the Platform Repository
 Clone the platform repository on your management workstation or VM host:
@@ -327,13 +470,9 @@ In order for your application repository to automatically trigger preview builds
    - **Workflow Permissions:** In *Settings -> Actions -> General -> Workflow permissions*, select **Read and write permissions** and enable **Allow GitHub Actions to create and approve pull requests** (required for `build.yml` to automatically open bump PRs, and `preview.yml` to push images and post PR comments).
    - **Package Visibility:** After the first PR push, navigate to your GitHub Profile / Org *Packages*, select the package, open *Package settings*, and set visibility to **Public** so k3s can pull images without requiring private credentials.
 
----
+#### 3. Configure Secrets Out-of-Band
+Following Zero-Trust GitOps principles, secrets are managed **out-of-band**:
 
-### Step 2: Configure Secrets (Two Options)
-
-Following Zero-Trust GitOps principles, secrets are managed **out-of-band**. Choose either option below:
-
-#### Option A: Local DR Secrets Directory (Recommended — Persistent & Rebuild-Proof)
 Store your credentials in `~/.config/pr-preview/dr-secrets/` with strict `0600` permissions. When running `make bootstrap` or `scripts/dr-restore.sh`, the system automatically imports them without prompting:
 
 ```bash
@@ -359,18 +498,14 @@ kubectl create secret generic shared-main-app-postgres -n shared \
 chmod 600 ~/.config/pr-preview/dr-secrets/*.yaml
 ```
 
-#### Option B: Environment Variables (Fast & CI/CD Friendly)
-Export credentials directly into your active shell session before bootstrapping:
+Alternatively, export environment variables directly before bootstrapping:
 ```bash
 export TS_OAUTH_CLIENT_ID="tskey-client-..."
 export TS_OAUTH_CLIENT_SECRET="tskey-secret-..."
 export GITHUB_TOKEN="ghp_..."
 ```
-*(The bootstrap scripts will automatically detect these environment variables and create the in-cluster secrets).*
 
----
-
-### Step 3: One-Command Bootstrap
+</details>
 
 #### Scenario 1: Provision Clean VM + Cluster + Platform from Scratch
 Run Ansible to configure the VirtualBox VM, install k3s, set up Kubeconfig, and bootstrap all platform engines:
@@ -430,11 +565,13 @@ make bootstrap-platform
 
 | Command | Purpose |
 |---|---|
+| `make init` | Interactive setup wizard for values.yaml, workflows, and secrets (or ARGS="--non-interactive") |
+| `make doctor` | Run preflight diagnostics and health audit across 8 check groups (or ARGS="--offline") |
 | `make bootstrap` | End-to-end bootstrap: provision k3s via Ansible and bootstrap all platform services |
 | `make bootstrap-platform` | Bootstrap in-cluster platform services only (Tailscale, Argo CD, Monitoring, Reaper) |
 | `make sync-config` | Synchronize platform manifests with root `values.yaml` |
-| `make lint` | Run all linters (`check-config`, `yamllint`, `ansible-lint`, `shellcheck`, `ruff`, `gitleaks`, `helm lint`, `trivy`) |
-| `make test` | Run all 18 unit tests (FastAPI app, exporter, and reaper) |
+| `make lint` | Run all linters (`check-config`, `check-configmaps`, `yamllint`, `ansible-lint`, `shellcheck`, `ruff`, `gitleaks`, `helm lint`, `trivy`) |
+| `make test` | Run all 39 unit tests (FastAPI app, exporter, reaper, and preview_cli) |
 | `make helm-template` | Render Helm chart with sample values and validate dry-run Kubernetes manifests |
 | `make verify-security` | Run automated security audit against cluster (PSS, NetworkPolicy, DNS isolation) |
 | `make verify-teardown` | Verify zero lingering preview namespaces or proxy pods remain in cluster |

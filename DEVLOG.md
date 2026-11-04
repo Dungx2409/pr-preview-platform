@@ -134,6 +134,33 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-11-04 — Implement `make init` wizard and `make doctor` preflight diagnostics
+**Did:** Built standard-library CLI tooling in `scripts/preview_cli/` providing one-pass project configuration (`make init`) and comprehensive preflight health checks (`make doctor`):
+- Created `scripts/preview_cli/`:
+  - `util.py`: zero-dependency helpers for token redaction (`redact_secrets`), atomic file replacement (`atomic_write`), YAML/workflow/inventory updaters, and Markdown version parsing from `docs/versions.md`.
+  - `checks/`: modular diagnostics across 8 groups (`tools`, `config`, `secrets`, `github`, `ghcr`, `tailscale`, `host`, `cluster`).
+  - `doctor_cmd.py` & `scripts/doctor.py`: preflight engine supporting `--offline`, `--skip-cluster`, `--json`, `--only <group>`, and graceful SKIP/WARN/FAIL reporting with actionable fix hints.
+  - `init_cmd.py` & `scripts/init.py`: interactive wizard with prompt validation, `--non-interactive` env handling, `--dry-run` unified diffs, atomic 0600 secret generation in `~/.config/pr-preview/dr-secrets/`, and automatic manifest synchronization.
+- Created `tests/test_preview_cli.py`: added 21 comprehensive unit tests covering redactors, version extraction, dry-run diffs, validators, and PASS/WARN/FAIL/SKIP branches with zero live network calls (total unit tests increased from 18 to 39).
+- Updated `Makefile` with targets `init`, `doctor`, help documentation, and preflight hint on `bootstrap`.
+- Standardized `TAILNET_NAME` in `.github/workflows/preview.yml` and `preview-closed.yml`, and added `*.bak` to `.gitignore`.
+- Updated `README.md` (Quickstart init -> doctor -> bootstrap flow, troubleshooting guide, non-interactive env table, updated 39-test count) and `docs/runbook.md` (Preflight & diagnostics section).
+**Why this approach:** Eliminates error-prone manual hand-editing of manifests and workflows. Preflight checks detect misconfigurations (private GHCR packages, expired OAuth tokens, host connectivity errors) early with concrete fix instructions before bootstrap commands fail. Zero external runtime dependencies ensures the CLI runs on any vanilla Python 3.10+ system.
+**Verified:**
+- `make test`: 39/39 unit tests passed in 0.54s.
+- `make doctor ARGS="--only tools"`: 8/8 toolchain checks passed.
+- `make doctor ARGS="--only config"`: 8/8 config checks passed.
+- `make doctor ARGS="--only secrets"`: 4/4 secret checks passed.
+- `make doctor ARGS="--only tools --json"`: clean, valid machine-readable JSON output.
+- `make init ARGS="--non-interactive --dry-run"`: generated clean unified diffs and redacted secret manifests without modifying files.
+- `make init ARGS="--non-interactive"` (missing envs): cleanly exited with code 1 and reported missing variables.
+- `make lint`: 100% clean across yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm lint, and trivy.
+**Gotchas / decisions:**
+- *Gotcha:* GitHub Classic (`ghp_`) and Fine-grained (`github_pat_`) tokens, Tailscale API keys (`tskey-*`), and Bearer headers must be strictly redacted from exception messages and JSON outputs. Centralized `redact_secrets()` ensures zero leakage.
+- *Decision:* Anonymous GHCR package inspection requests a bearer token from `https://ghcr.io/token?scope=repository:...:pull` and sends a HEAD request to the manifest endpoint, distinguishing public from private images without requiring local registry credentials.
+**Learned (interview note):** I can explain defensive CLI architecture in DevOps tooling: using standard-library primitives avoids bootstrap circular dependencies ("chicken-and-egg" pip package installs), atomic file writes with `.bak` backups prevent partial corruption, and automated preflight checks fail early with remediation links rather than failing deep inside orchestration scripts.
+**Next:** Open Pull Request to `main`.
+
 ### 2026-10-30 — CI: Fix build workflow with automated PR for shared image bump
 **Did:** Updated `.github/workflows/build.yml` to replace direct `git push` to `main` with automated Pull Request creation using `gh pr create`:
 - Added `pull-requests: write` to workflow permissions.
