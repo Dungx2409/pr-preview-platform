@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 7 — Docs, demo, CV, team onboarding (T-7.5 Team onboarding / second repo)**
+**→ Phase 7 — Docs, demo, CV, team onboarding (T-7.3 Demo assets)**
 
 ---
 
@@ -155,7 +155,7 @@
 - [x] **T-7.4** 🤝 **`docs/cv-notes.md`** — measured bullets (real numbers), 8–10 likely interview Q&As, "what I'd improve next".
   - *Acceptance:* every number traces to the DEVLOG Metrics table.
 
-- [ ] **T-7.5** 🤝 **Team onboarding / second repo** (depends T-4.5, T-3.5)
+- [x] **T-7.5** 🤝 **Team onboarding / second repo** (depends T-4.5, T-3.5)
   - `docs/onboarding.md` ("add a new repo"): label, read-only token (also for private repos), `imagePullSecret` for private GHCR, workflow template, inviting teammates to the tailnet + `group:reviewers`, check the free-plan user cap on the official pricing page.
   - *Acceptance:* a sample second repo is onboarded by following the doc only; one real teammate opens a Tier 1 and a Tier 2 link; a non-member is denied.
 
