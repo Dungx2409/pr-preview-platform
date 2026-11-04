@@ -159,6 +159,11 @@
   - `docs/onboarding.md` ("add a new repo"): label, read-only token (also for private repos), `imagePullSecret` for private GHCR, workflow template, inviting teammates to the tailnet + `group:reviewers`, check the free-plan user cap on the official pricing page.
   - *Acceptance:* a sample second repo is onboarded by following the doc only; one real teammate opens a Tier 1 and a Tier 2 link; a non-member is denied.
 
+- [x] **T-7.6** 🤖 **CLI Onboarding & Preflight Diagnostics (`make init` & `make doctor`)**
+  - Interactive onboarding wizard (`scripts/init.py` / `make init`) configuring values.yaml, workflow TAILNET_NAME, ansible inventory host, and 0600 secrets in `~/.config/pr-preview/dr-secrets/`.
+  - Comprehensive preflight health doctor (`scripts/doctor.py` / `make doctor`) across 8 subsystems (tools, config, secrets, github, ghcr, tailscale, host, cluster) with actionable remediation.
+  - *Acceptance:* 39 unit tests green with mocked network/cluster; non-interactive and dry-run modes; secret redaction in logs/json; docs updated.
+
 ---
 
 ## Phase 8 — Optional cloud variant (needs a cloud account; nothing above may depend on it)

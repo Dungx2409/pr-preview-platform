@@ -516,6 +516,60 @@ If running commands interactively:
 - **Client-Side OpenAPI Discovery Cache:** When Argo CD CRDs are newly applied, the host `kubectl` cache (`~/.kube/cache/discovery`) can serve stale schema definitions causing transient `no matches for kind "ApplicationSet"` errors. Fixed in `scripts/dr-restore.sh` with automatic cache invalidation and retry logic.
 - **Secret Recovery Workflow:** Documented the secure out-of-band secret directory `~/.config/pr-preview/dr-secrets/` with strict `0600` permissions outside the repository, preventing the need to re-issue external tokens during disaster events.
 
+---
+
+## 8. Preflight Diagnostics & Health Audit (`make doctor`)
+
+The preflight diagnostic tool (`scripts/doctor.py`) automates Day-2 health audits, catches misconfigurations before provisioning, and provides actionable remediation commands.
+
+### 8.1 Usage & Command Options
+
+Run comprehensive health checks across all 8 diagnostic subsystems:
+```bash
+make doctor
+# or directly with python:
+python3 scripts/doctor.py
+```
+
+#### Diagnostic Flags:
+- **Offline / Local Mode:** Skip remote external network and API calls (GitHub, GHCR, Tailscale) when diagnosing host or cluster issues without an internet connection:
+  ```bash
+  make doctor ARGS="--offline"
+  ```
+- **Pre-Bootstrap / Skip Cluster:** Skip in-cluster Kubernetes checks (useful before the VM or cluster has been provisioned):
+  ```bash
+  make doctor ARGS="--skip-cluster"
+  ```
+- **Target a Single Diagnostic Subsystem:**
+  ```bash
+  make doctor ARGS="--only tools"       # Tools & minimum versions
+  make doctor ARGS="--only config"      # values.yaml and manifest sync
+  make doctor ARGS="--only secrets"     # DR secrets and permissions (0700/0600)
+  make doctor ARGS="--only github"      # GitHub API, repo access & label preview
+  make doctor ARGS="--only ghcr"        # Anonymous GHCR package visibility
+  make doctor ARGS="--only tailscale"   # Tailscale OAuth & client_credentials
+  make doctor ARGS="--only host"        # Ansible inventory & TCP 22 connectivity
+  make doctor ARGS="--only cluster"     # In-cluster pods, CRDs, secrets & TTL
+  ```
+- **Machine-Readable JSON Output:**
+  ```bash
+  make doctor ARGS="--json"
+  ```
+  Returns a structured JSON payload suitable for automated CI pipelines or external dashboards. All sensitive secrets, tokens, and credentials are automatically redacted.
+
+### 8.2 Common Diagnostic Failures & Quick Fixes
+
+| Diagnostic Symptom | Probable Cause | Runbook Remediation |
+|---|---|---|
+| `[FAIL] SSH service connectivity (TCP 22)` | Target VM is powered off or host-only interface is down | Start VM: `VBoxManage startvm "devops-server" --type headless` (see §2). Verify host-only IP `192.168.56.10`. |
+| `[FAIL] GHCR package visibility: Private` | Container package visibility defaults to Private on first push | Open GitHub Profile/Org → Packages → `demo-app` → Package Settings → Change visibility to **Public**. |
+| `[FAIL] Manifest synchronization` | Manifests drifted from root `values.yaml` | Run `make sync-config` to synchronize ApplicationSet and AppProject. |
+| `[FAIL] DR Secrets directory permissions` | Permissions are not restricted to owner | Run: `chmod 700 ~/.config/pr-preview/dr-secrets && chmod 600 ~/.config/pr-preview/dr-secrets/*.yaml` (see §6.1). |
+| `[FAIL] Tailscale OAuth credentials` | Client secret expired or missing `tag:k8s-operator` | Reissue OAuth client at https://login.tailscale.com/admin/settings/oauth with `Devices:Write` and `Auth Keys:Write`. |
+| `[FAIL] Preview trigger label` | Target repository lacks label `preview` | Create label `preview` in your application repository (*Issues → Labels → New label*). |
+| `[WARN] Lingering preview namespaces` | Namespace exceeded TTL (168 hours) | Run `make verify-teardown` or let the in-cluster Reaper CronJob automatically dismantle it. |
+
+
 
 
 
