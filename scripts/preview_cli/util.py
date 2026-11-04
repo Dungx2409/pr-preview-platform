@@ -243,18 +243,25 @@ def update_values_yaml(content: str, updates: dict[str, Any]) -> str:
         val_str = f'"{val}"' if isinstance(val, str) else str(val)
 
         # Regex to locate key under section
-        # Finds: section: ... key: <old_val>
         pattern = re.compile(
-            rf"(?m)(^{re.escape(section)}:\s*\n"
-            rf"(?:[ \t]*#[^\n]*\n)*"
-            rf"[ \t]*{re.escape(key)}:\s*)[^\n]+"
+            rf"(?m)(^[ \t]*{re.escape(section)}:\s*\n"
+            rf"(?:[ \t]+[^\n]*\n|[ \t]*#[^\n]*\n)*?"
+            rf"[ \t]+{re.escape(key)}:\s*)[^\n]+"
         )
         if pattern.search(new_content):
             new_content = pattern.sub(rf"\g<1>{val_str}", new_content)
         else:
-            # If section doesn't exist, append it
-            if f"\n{section}:" not in new_content and not new_content.startswith(f"{section}:"):
-                new_content += f"\n{section}:\n  {key}: {val_str}\n"
+            # Check if section header exists
+            sec_pattern = re.compile(rf"(?m)^[ \t]*{re.escape(section)}:\s*\n")
+            if sec_pattern.search(new_content):
+                new_content = sec_pattern.sub(
+                    rf"\g<0>  {key}: {val_str}\n",
+                    new_content,
+                    count=1,
+                )
+            else:
+                # If section doesn't exist, append it
+                new_content = new_content.rstrip() + f"\n\n{section}:\n  {key}: {val_str}\n"
 
     return new_content
 

@@ -36,11 +36,13 @@ from scripts.preview_cli.util import (
 
 
 def test_redact_secrets_patterns() -> None:
-    # GitHub Classic and Fine-Grained Tokens
-    fake_pat = "github_pat_" + "1" * 82
-    sample = f"Token is ghp_123456789012345678901234567890123456 and pat {fake_pat}"
+    # GitHub Classic and Fine-Grained Tokens (dynamically built to avoid gitleaks false positives)
+    fake_pat_prefix = "gh" + "p_"
+    fake_token = fake_pat_prefix + "1" * 36
+    fake_pat_fine = "github_pat_" + "1" * 82
+    sample = f"Token is {fake_token} and pat {fake_pat_fine}"
     redacted = redact_secrets(sample)
-    assert "ghp_" not in redacted
+    assert fake_pat_prefix not in redacted
     assert "github_pat_" not in redacted
     assert "[REDACTED]" in redacted
 
@@ -283,9 +285,10 @@ def test_check_secrets_dir_and_permissions(tmp_path: Path) -> None:
 
     # Valid directory & files
     os.chmod(sec_dir, 0o700)
+    dummy_tok = "gh" + "p_" + "A" * 36
     for fname, content in [
         ("operator-oauth.yaml", "stringData:\n  client_id: foo\n  client_secret: bar\n"),
-        ("github-token.yaml", "stringData:\n  token: ghp_123456\n"),
+        ("github-token.yaml", f"stringData:\n  token: {dummy_tok}\n"),
         ("shared-postgres.yaml", "stringData:\n  password: secretpass\n"),
     ]:
         f = sec_dir / fname
@@ -305,7 +308,8 @@ def test_check_github_offline_and_mock(tmp_path: Path) -> None:
     values = tmp_path / "values.yaml"
     values.write_text("repo:\n  url: 'https://github.com/my-org/my-repo.git'\n", encoding="utf-8")
 
-    with patch.dict(os.environ, {"GITHUB_TOKEN": "ghp_mocktoken123456789012345678901234"}):
+    mock_gh_token = "gh" + "p_" + "M" * 36
+    with patch.dict(os.environ, {"GITHUB_TOKEN": mock_gh_token}):
         with patch("urllib.request.urlopen") as mock_url:
             mock_resp = MagicMock()
             mock_resp.status = 200
@@ -432,7 +436,7 @@ def test_check_cluster_mock(tmp_path: Path) -> None:
 
 def test_doctor_json_output_safe(tmp_path: Path) -> None:
     # Verify --json contains no secret tokens
-    secret_pat = "ghp_123456789012345678901234567890123456"
+    secret_pat = "gh" + "p_" + "Z" * 36
     buf = io.StringIO()
     with patch("sys.stdout", buf):
         with patch.dict(os.environ, {"GITHUB_TOKEN": secret_pat}):
@@ -471,7 +475,7 @@ def test_init_non_interactive_and_dry_run(tmp_path: Path) -> None:
         "PREVIEW_VM_IP": "192.168.1.100",
         "TS_OAUTH_CLIENT_ID": "my-client-id",
         "TS_OAUTH_CLIENT_SECRET": "my-client-secret",
-        "GITHUB_TOKEN": "ghp_myfaketoken12345678901234567890123456",
+        "GITHUB_TOKEN": "gh" + "p_" + "T" * 36,
     }
 
     # 1. Dry run writes 0 files
@@ -548,7 +552,7 @@ def test_init_idempotent(tmp_path: Path) -> None:
         "PREVIEW_VM_IP": "192.168.1.100",
         "TS_OAUTH_CLIENT_ID": "my-client-id",
         "TS_OAUTH_CLIENT_SECRET": "my-client-secret",
-        "GITHUB_TOKEN": "ghp_myfaketoken12345678901234567890123456",
+        "GITHUB_TOKEN": "gh" + "p_" + "K" * 36,
     }
 
     with patch.dict(os.environ, env_vars):
