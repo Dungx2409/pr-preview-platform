@@ -134,6 +134,33 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-11-04 — T-7.4 — Create CV notes and technical interview preparation guide
+**Did:** Created `docs/cv-notes.md` providing a comprehensive, metrics-verified cheat sheet for CV preparation and technical DevOps/Platform engineering interviews:
+- Formulated 10 tailored resume bullets across Core DevOps/GitOps and Performance/Reliability focuses, each with exact quantified metrics from DEVLOG.
+- Formulated a 30-second elevator pitch summarizing the project value proposition.
+- Documented 10 high-signal, deep technical interview questions with architectural rationale:
+  1. Pull-based GitOps (Argo CD) vs Push-based CI/CD (least privilege, drift detection).
+  2. Multi-tenant workload isolation (Namespaces, PSS baseline, ResourceQuota/LimitRange, default-deny NetworkPolicy).
+  3. Tailscale Kubernetes Operator vs Public Ingress (zero public attack surface, free TLS, ACL RBAC).
+  4. Zero resource leaks & cascading teardown (Argo CD cascade, CI webhook, Python Reaper CronJob, 20-cycle test).
+  5. Preview readiness measurement (Option C async notification + custom Prometheus exporter vs VPN runner polling).
+  6. Out-of-band secret management (zero secrets in Git, `0700`/`0600` POSIX permissions, redaction engine).
+  7. Disaster Recovery drill and RTO (17 min cached vs 39m 50s cold scratch, VirtualBox snapshot RAM downgrade gotcha).
+  8. Node capacity & concurrency calculation (3,805 MB headroom post-monitoring, 18 concurrent previews).
+  9. Production debugging gotchas (Grafana distroless startup CPU bottleneck, Argo CD 8-char short SHA mismatch).
+  10. Tier 1 (shared staging) vs Tier 2 (per-PR previews) architecture.
+- Analyzed architectural tradeoffs and a 5-step roadmap ("What I'd improve next"): scale-to-zero, DB branching, managed cloud k8s, Tailscale Funnel.
+- Added a full metrics verification cross-reference table mapping all numbers to DEVLOG.md.
+**Why this approach:** Translates raw engineering achievements into high-impact, defensible resume points and interview answers. Anchoring 100% of claims to measured numbers in DEVLOG.md ensures credibility during technical interviews.
+**Verified:**
+- Markdown structure, anchor links, and cross-reference table verified against DEVLOG.md Metrics.
+- `make lint`: 100% clean (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm lint, trivy).
+- `make test`: 39/39 unit tests passed.
+**Gotchas / decisions:**
+- *Decision:* Grouped interview questions into architectural categories (Security & Isolation, GitOps Lifecycle, Reliability & DR, Observability & Sizing) to provide structured talking points for interviews.
+**Learned (interview note):** I can clearly articulate the technical design decisions behind this platform: why pull-based GitOps provides credential safety over push models, how layered Kubernetes primitives enforce isolation without separate clusters, and how empirical resource budgeting determines real node concurrency limits.
+**Next:** T-7.5 — Team onboarding / second repo (`docs/onboarding.md`).
+
 ### 2026-11-04 — Implement `make init` wizard and `make doctor` preflight diagnostics
 **Did:** Built standard-library CLI tooling in `scripts/preview_cli/` providing one-pass project configuration (`make init`) and comprehensive preflight health checks (`make doctor`):
 - Created `scripts/preview_cli/`:

@@ -8,7 +8,7 @@
 
 ## Current focus
 
-**→ Phase 7 — Docs, demo, CV, team onboarding (T-7.3 Demo assets)**
+**→ Phase 7 — Docs, demo, CV, team onboarding (T-7.5 Team onboarding / second repo)**
 
 ---
 
@@ -152,7 +152,7 @@
 
 - [ ] **T-7.3** 👤 **Demo assets** — screen recording/GIF of open PR → private link → update → close; Grafana screenshots into `docs/img/`.
 
-- [ ] **T-7.4** 🤝 **`docs/cv-notes.md`** — measured bullets (real numbers), 8–10 likely interview Q&As, "what I'd improve next".
+- [x] **T-7.4** 🤝 **`docs/cv-notes.md`** — measured bullets (real numbers), 8–10 likely interview Q&As, "what I'd improve next".
   - *Acceptance:* every number traces to the DEVLOG Metrics table.
 
 - [ ] **T-7.5** 🤝 **Team onboarding / second repo** (depends T-4.5, T-3.5)
