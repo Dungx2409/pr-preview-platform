@@ -137,6 +137,11 @@ Each preview namespace (`pr-<N>`) is sandboxed with defense-in-depth security:
 - The demo application runs database migrations on startup via SQLAlchemy/Alembic.
 - When the preview namespace is deleted, the database container and its ephemeral storage are destroyed simultaneously, leaving zero dangling persistent volumes (PVs) or storage leaks.
 
+### 2.5 Dual-Layer Teardown & Janitor Engine
+To prevent resource exhaustion on the single-node VM, teardown is managed at two distinct layers:
+1. **Fast-Path (Event-Driven):** When a PR is closed or merged, GitHub Actions workflow `.github/workflows/preview-teardown.yml` triggers immediately. It removes the preview image from GHCR and removes the `preview` label, triggering Argo CD Application deletion within ~6–7 seconds.
+2. **Slow-Path Safety Net (In-Cluster Janitor):** A Python-based `Reaper` CronJob runs every 15 minutes. It queries the GitHub API for PR states and deletes orphaned namespaces, expired previews exceeding TTL (24 hours), or dangling Tailscale proxy resources that outlived their parent application.
+
 ### 2.6 Centralized Project Configuration Model (`values.yaml`)
 
 The platform utilizes a single declarative file at the repository root ([`values.yaml`](../values.yaml)) as the central source of truth for all project-specific metadata:
@@ -149,9 +154,43 @@ The platform utilizes a single declarative file at the repository root ([`values
 2. **Helm Engine:** The Helm source loads `/values.yaml` directly via `valueFiles: [/values.yaml]`, parameterizing Deployment container ports, liveness/readiness probes, Service targetPorts, Ingress hostnames, and NetworkPolicy rules.
 3. **CI & Janitor Tooling:** GitHub Actions workflows (`preview.yml`, `preview-closed.yml`, `build.yml`), Reaper CronJob, and cleanup verification scripts extract project parameters from `values.yaml`, ensuring end-to-end consistency.
 4. **Project Switching:** To adapt the platform to a new project: edit `values.yaml`, commit, and let Argo CD sync automatically without modifying any underlying manifests.
-To prevent resource exhaustion on the single-node VM, teardown is managed at two distinct layers:
-1. **Fast-Path (Event-Driven):** When a PR is closed or merged, GitHub Actions workflow `.github/workflows/preview-teardown.yml` triggers immediately. It removes the preview image from GHCR and removes the `preview` label, triggering Argo CD Application deletion within ~6–7 seconds.
-2. **Slow-Path Safety Net (In-Cluster Janitor):** A Python-based `Reaper` CronJob runs every 15 minutes. It queries the GitHub API for PR states and deletes orphaned namespaces, expired previews exceeding TTL (24 hours), or dangling Tailscale proxy resources that outlived their parent application.
+
+### 2.7 Multi-Service Workloads & Ingress Routing
+
+The platform supports both monoliths and multi-service architectures using a unified schema within `charts/app`:
+
+- **Unified `services:` Schema:**
+  - **Monolith:** Represented as $N=1$ service in `services:` (e.g. `demo-app`). If the `services:` block is omitted, the chart automatically falls back to the legacy `app:` block for complete backward compatibility.
+  - **Microservices:** Represented as $N \ge 2$ services in `services:`, each with:
+    - `name`: Unique service identifier (used in Kubernetes resource names, component labels, and GHCR package names).
+    - `image`: Full image repository without tag (e.g. `ghcr.io/<org>/<service>`).
+    - `port`: Internal container listening port.
+    - `healthcheck`: HTTP endpoint for liveness probes (default: `/healthz`).
+    - `buildDir`: Directory containing the service's source code and `Dockerfile` (default: service `name`).
+    - `path`: Ingress routing path (e.g. `/web`, `/api`).
+
+- **Global-Tag Model:**
+  Container image tags are global across all services within a preview environment (`.Values.image.tag` or commit SHA). Previews represent an atomic snapshot of the entire repository at a single git commit; individual services do not maintain independent versions within a PR preview.
+
+- **Multi-Path Ingress & Prefix Routing:**
+  A single Tailscale Ingress multiplexes incoming HTTP traffic across all declared services using path-based prefix routing (`pathType: Prefix`).
+  > [!NOTE]
+  > **Tailscale Ingress Prefix Stripping & Fallback:**
+  > The Tailscale Kubernetes Operator translates Ingress rules directly to internal proxy routes matching path prefixes. However, native path stripping or URL rewriting (e.g., stripping `/api` prefix before forwarding to the container) is not verified or natively supported out-of-the-box by the Tailscale ingress controller.
+  >
+  > Applications must either:
+  > 1. Be configured to handle the assigned base prefix natively (e.g., FastAPI mounted with `root_path="/api"`), or
+  > 2. Use a frontend reverse proxy fallback (e.g., an nginx gateway container) that performs `proxy_pass` URL rewrites before forwarding requests to upstream backend services.
+
+- **Inter-Service Network Policies:**
+  When multiple services are configured, NetworkPolicies automatically permit bidirectional TCP communication between app services within the same preview namespace, while maintaining default-deny isolation against external and cross-namespace traffic.
+
+### 2.8 Golden Baseline Verification & Backward Compatibility
+
+To prevent regressions and ensure backward compatibility for single-service deployments, the platform implements automated golden baseline testing:
+- **Golden Baseline (`tests/golden/helm-template-default.yaml`):** Captures the exact, byte-for-byte rendered YAML output of `helm template test-app charts/app` with default values.
+- **Verification Script (`scripts/golden-check.sh`):** Renders the Helm chart and performs a strict byte-level unified diff against the baseline. Any unintended divergence causes a non-zero exit code.
+- **Makefile Integration:** Target `make golden-check` executes the script and is wired as a prerequisite for `make helm-template`. Single-service renders must remain 100% byte-identical.
 
 ---
 

@@ -166,3 +166,33 @@ Adopt **Option B (In-Cluster preview-exporter)**.
 - **Direct Event Aggregation:** Computes exact time-to-ready by observing Kubernetes timestamps (`creationTimestamp` to Pod Ready condition) rather than polling over network latency.
 - **Cloud-Native Prometheus Integration:** Deployed with standard Kubernetes `ServiceMonitor` and scraped natively by `kube-prometheus-stack`.
 
+---
+
+## ADR-015 / D-015: Unified Chart Architecture — One Chart + One Services Schema
+
+- **Status:** **Accepted** (Decided in T-9.10 / Phase 9)
+- **Decider:** Dũng Lương (Owner) & Antigravity (Agent)
+- **Consulted:** SPEC §4.1 (D10, D15), Phase 9 Multi-Service Architecture Plan
+
+### 1. Context & Problem Statement
+The platform originally supported single-service applications (a monolith plus an optional PostgreSQL container). To support multi-tier microservices (e.g. distinct web frontend and backend API services) within each PR preview environment, we evaluated two architectural approaches:
+- **Option A (Separate Charts):** Maintain separate charts for single-service workloads (`charts/monolith`) and microservices workloads (`charts/microservices`).
+- **Option B (Unified Chart + `services:` Schema):** Maintain a single, parameterized Helm chart (`charts/app`) supporting both monoliths and microservices through a normalized `services:` list schema.
+
+### 2. Comparison & Evaluation
+
+| Dimension | Option A: Separate Charts | Option B: Unified Chart (`charts/app`) |
+|---|---|---|
+| **Maintenance Overhead** | High: Redundant templates (NetworkPolicy, LimitRange, Quotas, ServiceAccount, Ingress) drift across charts | **Low:** Single set of templates with unified hardening and isolation policies |
+| **Backward Compatibility** | Fragile: Monoliths and microservices diverge; breaking updates require updating multiple charts | **Strict:** Monoliths are represented as $N=1$ service (or auto-derived from legacy `app:` block). Byte-identical rendering verified via golden tests |
+| **GitOps Consistency** | Argo CD ApplicationSet needs conditional logic to pick chart paths | **Uniform:** ApplicationSet always deploys `charts/app` regardless of service topology |
+| **CI Matrix Scalability** | Divergent workflow definitions | **Seamless:** CI matrix dynamically builds all services declared in `values.yaml` |
+
+### 3. Decision
+Adopt **Option B (One Chart + Unified `services:` Schema)**:
+1. **Single Schema:** `services:` defines the workload topology. A monolith is simply $N=1$ service (with fallback to `app:` if omitted). Microservices are defined as $N>1$ services.
+2. **Global-Tag Model:** All services share a single release image tag (`.Values.image.tag` or commit SHA), ensuring preview environments deploy an atomic, synchronized snapshot of the repository.
+3. **Multi-Path Ingress:** Single Tailscale Ingress multiplexes prefix paths to their corresponding backend services.
+4. **Golden Baseline Regression Guard:** Enforce byte-identical rendering for legacy/default values via `scripts/golden-check.sh` (`make golden-check`), ensuring zero regression for single-service deployments.
+
+
