@@ -224,44 +224,50 @@ services:
 | **T-9.9** init/doctor + tests for `services:` | — | `scripts/preview_cli/checks/config.py`, `scripts/preview_cli/init_cmd.py`, `scripts/preview_cli/util.py`, `tests/test_preview_cli.py` | 1 |
 | **T-9.10** examples + docs + golden-check script | T-9.2..9.4 | `examples/`, `docs/architecture.md`, `docs/decisions.md`, `README.md`, `Makefile`, `scripts/golden-check.sh` | 3 |
 
-- [ ] **T-9.1** 🤖 **Chart helpers + chart values schema** — add `app.services` helper (derives a
+- [x] **T-9.1** 🤖 **Chart helpers + chart values schema** — add `app.services` helper (derives a
   normalized service list from `services:` or `app:`), plus per-service `fullname`/selector helpers;
   add a *commented* `services:` example to `charts/app/values.yaml` (do NOT activate it — default
   render must stay backward-compat). *Acceptance:* `helm lint` clean; derivation = one service matching
   current `app:`/`image:` exactly; no golden diff introduced by this task alone.
-- [ ] **T-9.2** 🤖 **Deployment + Service over services** (depends T-9.1). *Acceptance:* one
+- [x] **T-9.2** 🤖 **Deployment + Service over services** (depends T-9.1). *Acceptance:* one
   Deployment+Service per service; single-service backward-compat render byte-identical to golden.
-- [ ] **T-9.3** 🤖 **Ingress multi-path** (depends T-9.1). One Ingress, one path per service from
+- [x] **T-9.3** 🤖 **Ingress multi-path** (depends T-9.1). One Ingress, one path per service from
   `services[].path`; single-service `/` byte-identical. **Do NOT assume Tailscale prefix-stripping** —
   record the unknown in DEVLOG and provide the FE `nginx proxy_pass` fallback in `examples/` (T-9.10).
-- [ ] **T-9.4** 🤖 **NetworkPolicy multi-service** (depends T-9.1). default-deny unchanged; per-service
+- [x] **T-9.4** 🤖 **NetworkPolicy multi-service** (depends T-9.1). default-deny unchanged; per-service
   ingress from Tailscale proxy + same-ns; allow inter-service + DB egress per service; single-service
   byte-identical. Never weaken (no `0.0.0.0/0` ingress, no dropping PSS/netpol).
-- [ ] **T-9.5** 🤖 **Root values.yaml + values-shared.yaml** — add `services:` (demo-app as 1 service)
+- [x] **T-9.5** 🤖 **Root values.yaml + values-shared.yaml** — add `services:` (demo-app as 1 service)
   while KEEPING `app:`/`image:`/`namespace`/`tailnet` untouched (sync-config + backward-compat rely on
   them). *Acceptance:* `make check-config` still green.
-- [ ] **T-9.6** 🤖 **sync-config + Argo CD** — propagate `services:` (image repos) into
+- [x] **T-9.6** 🤖 **sync-config + Argo CD** — propagate `services:` (image repos) into
   `applicationset-previews.yaml` `valuesObject` (single `image.tag` applied to all services) and
   `application-shared.yaml`. *Acceptance:* `make sync-config` idempotent; `make check-config` green.
-- [ ] **T-9.7** 🤖 **CI matrix** — matrix over `services:`; build only changed services (path-based
+- [x] **T-9.7** 🤖 **CI matrix** — matrix over `services:`; build only changed services (path-based
   change detection); retag unchanged services to the new tag (pull+tag+push) so the ApplicationSet's
   single tag resolves for every service. *Acceptance:* workflows parse; matrix + retag logic present;
   no `latest`, no PR-code running under `pull_request_target`.
-- [ ] **T-9.8** 🤖 **preview-closed multi-service** — loop over `services:` to delete GHCR tags for
+- [x] **T-9.8** 🤖 **preview-closed multi-service** — loop over `services:` to delete GHCR tags for
   every package. *Acceptance:* teardown deletes all service tags.
-- [ ] **T-9.9** 🤖 **init/doctor + tests** — `check_config` validates a `services:` list (name, image,
+- [x] **T-9.9** 🤖 **init/doctor + tests** — `check_config` validates a `services:` list (name, image,
   port>0, healthcheck path, buildDir); `init` writes `services:`. *Acceptance:* `make test` green (all
   existing 39+ tests still pass).
-- [ ] **T-9.10** 🤖 **Examples + docs + golden check** (depends T-9.2..9.4) — `examples/values-microservices.yaml`
+- [x] **T-9.10** 🤖 **Examples + docs + golden check** (depends T-9.2..9.4) — `examples/values-microservices.yaml`
   (N services) renders+validates via kubeconform; `scripts/golden-check.sh` diffs default render vs
   golden; wire into `make helm-template`/`ci.yml`; update `docs/architecture.md`, `docs/decisions.md`,
   `README.md`. *Acceptance:* `make lint && make test && make helm-template && make check-config` +
   golden check all green.
 
-**Blockers (VM/cluster, mark `[!]`, do NOT stop the run):**
-- Tailscale Ingress multi-path / prefix-strip behavior can only be confirmed on the real VM/cluster
-  (👤 + 🟡). Default in-repo = FE `nginx proxy_pass` fallback (no VM needed); batch the real spike at
-  the end.
+**Blockers (VM/cluster or GitHub, mark `[!]`, code is done but acceptance needs a real run):**
+- `[!]` **T-9.3 Tailscale multi-path spike** — whether the Tailscale Operator Ingress strips the path
+  prefix (`/web`, `/api`) before forwarding is unverified on the real cluster (👤 + 🟡). In-repo default =
+  apps serve under their own prefix or a FE `nginx proxy_pass` handles rewrites (`examples/`). To verify:
+  boot the VM, deploy `examples/values-microservices.yaml`, and curl `https://pr-<N>.<tailnet>/web` +
+  `/api`.
+- `[!]` **T-9.7 CI matrix/retag real run** — the matrix + "build changed / retag unchanged" logic is only
+  verified statically (yamllint + parse). To verify: open a labeled `preview` PR on GitHub that changes
+  ONE service and confirm (a) the changed service builds, (b) the unchanged service is retagged, (c) the
+  preview comment + Deployment status still appear, (d) Argo CD renders all services with the single tag.
 
 ---
 
