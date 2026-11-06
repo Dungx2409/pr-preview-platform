@@ -36,6 +36,8 @@
 | **Ruff** | `0.11.11` | https://github.com/astral-sh/ruff/releases/tag/0.11.11 | Python linter and formatter |
 | **Gitleaks** | `8.27.2` | https://github.com/gitleaks/gitleaks/releases/tag/v8.27.2 | Secret scanner |
 | **kubeconform** | `v0.6.7` | https://github.com/yannh/kubeconform/releases/tag/v0.6.7 | Kubernetes manifest validator |
+| **Terraform** | `1.17.1` | https://releases.hashicorp.com/terraform/1.17.1/ | Infrastructure as Code CLI (Phase 8 cloud variant) |
+| **Terraform AWS Provider** | `5.100.0` | https://registry.terraform.io/providers/hashicorp/aws/5.100.0 | Cloud provider pinned for Phase 8 cloud variant |
 
 ---
 

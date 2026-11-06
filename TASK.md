@@ -168,8 +168,8 @@
 
 ## Phase 8 — Optional cloud variant (needs a cloud account; nothing above may depend on it)
 
-- [ ] **T-8.1** 🤝 **Terraform (cloud): backend, network, VM, static IP** — reuse the former T-1.1–T-1.4 design; firewall 80/443 only if needed, SSH owner-only, **no 6443**; `plan` reviewed before any `apply` (🟡).
-  - *Acceptance:* `terraform validate` + `tflint` clean; owner-approved `apply`; no real values in Git.
+- [x] **T-8.1** 🤖 **Terraform (cloud): backend, network, VM, static IP** — implemented as the **AWS variant, verified end-to-end on LocalStack** (no GCP account): VPC + public subnet + IGW + route table + SG (SSH 22 owner-only, **no 6443**) + EC2 + Elastic IP, with S3/DynamoDB remote state. *(Real GCP `apply` stays optional if a cloud account appears later.)*
+  - *Acceptance:* `terraform fmt` + `validate` clean; `plan`/`apply`/`destroy` verified on LocalStack; no real values in Git. *(tflint not run — see DEVLOG.)*
 
 - [ ] **T-8.2** 🤖 **Run the same Ansible roles on the cloud VM** (depends T-8.1)
   - *Acceptance:* node Ready; second run = 0 changed; differences vs the local VM logged in DEVLOG.

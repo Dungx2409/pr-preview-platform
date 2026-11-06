@@ -102,6 +102,11 @@
     - *Cause:* `kubectl` caches OpenAPI discovery schemas in `~/.kube/cache/discovery/`. If `kubectl` queries the cluster while CRDs are being registered, it caches an incomplete schema.
     - *Fix:* Clear client cache via `rm -rf ~/.kube/cache` or implement a retry loop in automation scripts.
 
+12. **Trivy `config` scan also covers Terraform; inline ignore syntax is finicky:**
+    - *Symptom:* `make lint` (CI) fails on new `infra/terraform/*.tf` with `AWS-0028` (IMDSv1) and `AWS-0104` (egress to `0.0.0.0/0`).
+    - *Cause:* `trivy config --severity CRITICAL,HIGH --exit-code 1 .` scans Terraform too. A k3s node legitimately needs a broad egress CIDR (apt/registry/Tailscale IPs are dynamic), so `AWS-0104` is unavoidable.
+    - *Fix:* Set `metadata_options { http_tokens = "required" }` (IMDSv2). For the unavoidable broad-egress finding, put `#trivy:ignore:AVD-AWS-0104` on the line *above* the `egress {` block — the full AVD ID, above the block; the short form `#trivy:ignore:aws-0104` placed *inside* the block is NOT honored.
+
 ## Open questions / blockers
 
 | # | Question | Owner | Status |
@@ -133,6 +138,17 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-11-06 — T-8.1 — Terraform IaC (AWS variant) verified on LocalStack
+**Did:** Implemented Phase 8 Terraform IaC under `infra/terraform/` targeting **AWS** (instead of GCP — no cloud account) and verified the full lifecycle on **LocalStack**. Files: `versions.tf` (terraform `~>1.17`, hashicorp/aws `~>5.100.0`), `main.tf` (VPC, public subnet, IGW, route table, security group [SSH 22 owner-only, **6443 denied**], EC2, Elastic IP + association), `variables.tf` (typed+described), `outputs.tf` (`public_ip` sensitive), `backend.tf` (S3 + DynamoDB lock), `terraform.tfvars.example`, `README.md`. Pinned versions added to `docs/versions.md`. Delegated to an Orca worker (Antigravity / `gemini-3.8-flash`, high effort); reviewed + integrated by coordinator.
+**Why this approach:** LocalStack delivers the Terraform/IaC signal with zero cloud cost and no account; the AWS shape mirrors the original GCP design (network + VM + static IP + remote state), so it stays portable to real AWS later.
+**Verified:** `terraform fmt -check -recursive` exit 0; `terraform validate` → `Success!`; `terraform apply` created **9 resources**; verified with `aws --endpoint-url=http://localhost:4566 ec2 describe-vpcs/-instances/-security-groups/-addresses`; `terraform destroy` exit 0. State file confirmed `backend.type = s3` (bucket `pr-preview-tfstate`, lock table `pr-preview-tflocks`).
+**Gotchas / decisions:**
+- LocalStack EC2 needs the AMI to exist in its mock catalog → default `ami-785db401` (LocalStack Ubuntu image); real AWS overrides via `terraform.tfvars`.
+- Provider sets LocalStack-compat flags (`skip_credentials_validation`, `s3_use_path_style`, `skip_metadata_api_check`, `skip_requesting_account_id`) in `versions.tf`; these MUST be removed for real AWS (README §4 documents it).
+- `.terraform.lock.hcl` is git-ignored (T-0.2) → provider checksums aren't locked in Git; candidate for a follow-up.
+**Learned (interview note):** Terraform's S3 + DynamoDB backend keeps state and locking outside the repo, and LocalStack lets you exercise the real `init → plan → apply → destroy` loop with dummy creds — proving the IaC is correct without spending a dollar on real cloud.
+**Next:** T-8.2/T-8.3 remain open (need a real cloud VM). Optional: commit `.terraform.lock.hcl`, add `tflint`.
 
 ### 2026-11-04 — T-7.5 — Team onboarding and multi-repository integration guide
 **Did:** Authored `docs/onboarding.md` providing an end-to-end operational guide for onboarding teammates and integrating external application repositories (public or private):
