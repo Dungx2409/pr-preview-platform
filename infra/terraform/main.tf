@@ -64,9 +64,13 @@ resource "aws_security_group" "k3s_node" {
   # IMPORTANT: Kubernetes API port 6443 is deliberately NOT exposed to the internet.
   # Cluster communication occurs securely via Tailscale tailnet or SSH tunnels.
 
-  # Outbound rule: full egress allowed for downloading packages and container images
+  # Outbound: a k3s node must reach arbitrary internet hosts (apt mirrors, container
+  # registries, Tailscale control plane) whose IPs are dynamic, so the egress CIDR is
+  # 0.0.0.0/0. That is unavoidable for a node; pod-level egress is restricted separately
+  # by the Kubernetes NetworkPolicy (SPEC §6.5). Hence the AVD-AWS-0104 ignore below.
+  #trivy:ignore:AVD-AWS-0104
   egress {
-    description = "Allow all outbound traffic for OS updates and container image pulls"
+    description = "Outbound for OS updates, container image pulls, Tailscale"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -84,6 +88,10 @@ resource "aws_instance" "k3s_node" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.k3s_node.id]
   key_name               = var.key_name
+
+  metadata_options {
+    http_tokens = "required"
+  }
 
   root_block_device {
     volume_size           = 30

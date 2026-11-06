@@ -102,6 +102,11 @@
     - *Cause:* `kubectl` caches OpenAPI discovery schemas in `~/.kube/cache/discovery/`. If `kubectl` queries the cluster while CRDs are being registered, it caches an incomplete schema.
     - *Fix:* Clear client cache via `rm -rf ~/.kube/cache` or implement a retry loop in automation scripts.
 
+12. **Trivy `config` scan also covers Terraform; inline ignore syntax is finicky:**
+    - *Symptom:* `make lint` (CI) fails on new `infra/terraform/*.tf` with `AWS-0028` (IMDSv1) and `AWS-0104` (egress to `0.0.0.0/0`).
+    - *Cause:* `trivy config --severity CRITICAL,HIGH --exit-code 1 .` scans Terraform too. A k3s node legitimately needs a broad egress CIDR (apt/registry/Tailscale IPs are dynamic), so `AWS-0104` is unavoidable.
+    - *Fix:* Set `metadata_options { http_tokens = "required" }` (IMDSv2). For the unavoidable broad-egress finding, put `#trivy:ignore:AVD-AWS-0104` on the line *above* the `egress {` block — the full AVD ID, above the block; the short form `#trivy:ignore:aws-0104` placed *inside* the block is NOT honored.
+
 ## Open questions / blockers
 
 | # | Question | Owner | Status |
