@@ -1,87 +1,89 @@
+{{- range $index, $svc := include "app.services" . | fromYamlArray }}
+{{- if $index }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "app.fullname" . }}
+  name: {{ include "app.serviceFullname" (list $ $svc) }}
   labels:
-    {{- include "app.labels" . | nindent 4 }}
-    app.kubernetes.io/component: app
+    {{- include "app.serviceLabels" (list $ $svc) | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ $.Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "app.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: app
+      {{- include "app.serviceSelectorLabels" (list $ $svc) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "app.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: app
+        {{- include "app.serviceSelectorLabels" (list $ $svc) | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "app.serviceAccountName" . }}
+      serviceAccountName: {{ include "app.serviceAccountName" $ }}
       automountServiceAccountToken: false
-      {{- with .Values.imagePullSecrets }}
+      {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: app
-          image: "{{ (get (.Values.app | default dict) "image") | default .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+        - name: {{ if and $.Values.services (gt (len $.Values.services) 0) }}{{ $svc.name }}{{ else }}app{{ end }}
+          image: "{{ $svc.image }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml $.Values.securityContext | nindent 12 }}
           ports:
             - name: http
-              containerPort: {{ (get (.Values.app | default dict) "port") | default .Values.service.targetPort | default 8000 }}
+              containerPort: {{ $svc.port }}
               protocol: TCP
           env:
             - name: ENV_NAME
-              value: {{ .Values.env | default .Release.Namespace | quote }}
+              value: {{ $.Values.env | default $.Release.Namespace | quote }}
             - name: PR_NUMBER
-              value: {{ .Values.pr.number | default "local" | quote }}
+              value: {{ $.Values.pr.number | default "local" | quote }}
             - name: GIT_SHA
-              value: {{ .Values.gitSha | default "unknown" | quote }}
-            {{- if .Values.postgres.enabled }}
+              value: {{ $.Values.gitSha | default "unknown" | quote }}
+            {{- if $.Values.postgres.enabled }}
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "app.postgresFullname" . }}
+                  name: {{ include "app.postgresFullname" $ }}
                   key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "app.postgresFullname" . }}
+                  name: {{ include "app.postgresFullname" $ }}
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "app.postgresFullname" . }}
+                  name: {{ include "app.postgresFullname" $ }}
                   key: POSTGRES_DB
             - name: DATABASE_URL
-              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "app.postgresFullname" . }}:{{ .Values.postgres.service.port }}/$(POSTGRES_DB)"
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "app.postgresFullname" $ }}:{{ $.Values.postgres.service.port }}/$(POSTGRES_DB)"
             {{- end }}
           livenessProbe:
             httpGet:
-              path: {{ (get (.Values.app | default dict) "healthcheck") | default .Values.probes.liveness.path | default "/healthz" }}
+              path: {{ $svc.healthcheck }}
               port: http
-            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            initialDelaySeconds: {{ $.Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $.Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $.Values.probes.liveness.failureThreshold }}
           readinessProbe:
             httpGet:
-              path: {{ .Values.probes.readiness.path }}
+              path: {{ $.Values.probes.readiness.path }}
               port: http
-            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            initialDelaySeconds: {{ $.Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $.Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $.Values.probes.readiness.failureThreshold }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml $.Values.resources | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
       volumes:
         - name: tmp
           emptyDir: {}
+{{- end }}

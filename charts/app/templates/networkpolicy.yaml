@@ -1,4 +1,5 @@
 {{- if .Values.networkPolicy.enabled -}}
+{{- $services := include "app.services" . | fromYamlArray -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -21,9 +22,23 @@ metadata:
     app.kubernetes.io/component: isolation
 spec:
   podSelector:
+  {{- if and .Values.services (gt (len .Values.services) 0) }}
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - {{ include "app.name" . }}
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+        {{- range $services }}
+          - {{ .name }}
+        {{- end }}
+  {{- else }}
     matchLabels:
       app.kubernetes.io/name: {{ include "app.name" . }}
       app.kubernetes.io/component: app
+  {{- end }}
   policyTypes:
     - Ingress
     - Egress
@@ -34,14 +49,18 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.networkPolicy.tailscaleNamespace | default "tailscale" }}
       ports:
+      {{- range $services }}
         - protocol: TCP
-          port: {{ (get (.Values.app | default dict) "port") | default .Values.service.targetPort | default 8000 }}
+          port: {{ .port }}
+      {{- end }}
     # Allow ingress from within the same preview namespace
     - from:
         - podSelector: {}
       ports:
+      {{- range $services }}
         - protocol: TCP
-          port: {{ (get (.Values.app | default dict) "port") | default .Values.service.targetPort | default 8000 }}
+          port: {{ .port }}
+      {{- end }}
   egress:
     # Allow DNS resolution
     - to:
@@ -59,6 +78,18 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    {{- if and .Values.services (gt (len .Values.services) 1) }}
+    # Allow inter-service communication between app services in the same namespace
+    {{- range $svc := $services }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "app.serviceSelectorLabels" (list $ $svc) | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ $svc.port }}
+    {{- end }}
+    {{- end }}
     {{- if .Values.networkPolicy.allowExternalEgress }}
     # Allow external internet egress excluding private networks and cloud metadata IP
     - to:
@@ -89,10 +120,18 @@ spec:
   ingress:
     # Allow PostgreSQL connections ONLY from the app pods in the same namespace
     - from:
+      {{- if and .Values.services (gt (len .Values.services) 0) }}
+        {{- range $svc := $services }}
+        - podSelector:
+            matchLabels:
+              {{- include "app.serviceSelectorLabels" (list $ $svc) | nindent 14 }}
+        {{- end }}
+      {{- else }}
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: {{ include "app.name" . }}
               app.kubernetes.io/component: app
+      {{- end }}
       ports:
         - protocol: TCP
           port: 5432

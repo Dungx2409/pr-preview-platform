@@ -1,4 +1,5 @@
 {{- if .Values.ingress.enabled -}}
+{{- $root := . -}}
 {{- $fullName := include "app.fullname" . -}}
 {{- $svcPort := .Values.service.port -}}
 {{- $nsPrefix := (get (.Values.namespace | default dict) "prefix") | default "preview" -}}
@@ -27,13 +28,15 @@ spec:
     - host: {{ $hostname }}
       http:
         paths:
-          - path: /
+          {{- range $svc := (include "app.services" $root | fromYamlArray) }}
+          - path: {{ $svc.path }}
             pathType: Prefix
             backend:
               service:
-                name: {{ $fullName }}
+                name: {{ include "app.serviceFullname" (list $root $svc) }}
                 port:
                   number: {{ $svcPort }}
+          {{- end }}
   tls:
     - hosts:
         - {{ $hostname }}
