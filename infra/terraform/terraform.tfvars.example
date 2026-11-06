@@ -1,0 +1,23 @@
+# AWS Region
+region = "us-east-1"
+
+# Target AMI ID (e.g., Ubuntu Server 24.04 LTS x86_64 in us-east-1)
+ami = "ami-0c55b159cbfafe1f0"
+
+# EC2 Instance Type for k3s single-node cluster
+instance_type = "t3.medium"
+
+# Key Pair Name (pre-registered in AWS or LocalStack)
+key_name = "preview-platform-key"
+
+# Restricted CIDR block for SSH ingress (owner IP only; NEVER 0.0.0.0/0 in production)
+allowed_ssh_cidr = "203.0.113.50/32"
+
+# Project Tags
+project_tags = {
+  Project   = "pr-preview-platform"
+  ManagedBy = "terraform"
+}
+
+# Environment Name
+environment = "cloud-variant"
