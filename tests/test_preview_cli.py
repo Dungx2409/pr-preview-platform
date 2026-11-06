@@ -151,6 +151,44 @@ tailnet:
     assert "# App name" in result  # Preserved comments
 
 
+def test_update_values_yaml_with_services() -> None:
+    baseline = """
+# Root Config
+repo:
+  url: "https://github.com/old/repo.git"
+  label: "preview"
+
+app:
+  name: "old-app"
+  image: "ghcr.io/old/app"
+  port: 8000
+  healthcheck: "/healthz"
+
+namespace:
+  prefix: "preview"
+"""
+    updates = {
+        "repo_url": "https://github.com/new/project.git",
+        "app_name": "demo-svc",
+        "app_image": "ghcr.io/new/demo-svc",
+        "app_port": 8080,
+        "app_healthcheck": "/healthz",
+        "ns_prefix": "staging",
+        "write_services": True,
+    }
+    result = update_values_yaml(baseline, updates)
+    assert 'name: "demo-svc"' in result
+    assert "port: 8080" in result
+    assert "services:" in result
+    assert "  - name: demo-svc" in result
+    assert "    image: ghcr.io/new/demo-svc" in result
+    assert "    port: 8080" in result
+    assert "    healthcheck: /healthz" in result
+    assert "    buildDir: demo-svc" in result
+    assert "    path: /" in result
+    assert "namespace:\n  prefix: " in result
+
+
 def test_update_workflow_tailnet() -> None:
     wf = """
 name: Preview
@@ -268,6 +306,128 @@ tailnet:
     assert bad_ids["config.healthcheck"] == "FAIL"
     assert bad_ids["config.namespace_prefix"] == "FAIL"
     assert bad_ids["config.workflow_tailnet"] == "FAIL"
+
+
+def test_check_config_services_validation(tmp_path: Path) -> None:
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    (wf_dir / "preview.yml").write_text("env:\n  TAILNET_NAME: custom.ts.net\n", encoding="utf-8")
+    (wf_dir / "preview-closed.yml").write_text(
+        "env:\n  TAILNET_NAME: custom.ts.net\n", encoding="utf-8"
+    )
+
+    # 1. Malformed services entry: port -1
+    bad_values = tmp_path / "values.yaml"
+    bad_values.write_text(
+        """
+repo:
+  url: "https://github.com/my-org/my-repo.git"
+app:
+  image: "ghcr.io/my-org/demo-app"
+  port: 8000
+  healthcheck: "/healthz"
+namespace:
+  prefix: "preview"
+tailnet:
+  name: "custom.ts.net"
+services:
+  - name: demo-app
+    image: ghcr.io/my-org/demo-app
+    port: -1
+    healthcheck: "/healthz"
+    path: "/"
+""",
+        encoding="utf-8",
+    )
+    res_bad = check_config(tmp_path)
+    svc_bad = next((r for r in res_bad if r.id == "config.services"), None)
+    assert svc_bad is not None
+    assert svc_bad.status == "FAIL"
+    assert "port must be a positive integer" in svc_bad.message
+
+    # 2. Additional malformed checks (healthcheck, path, name)
+    bad_values.write_text(
+        """
+repo:
+  url: "https://github.com/my-org/my-repo.git"
+app:
+  image: "ghcr.io/my-org/demo-app"
+  port: 8000
+  healthcheck: "/healthz"
+namespace:
+  prefix: "preview"
+tailnet:
+  name: "custom.ts.net"
+services:
+  - name: "INVALID_NAME!"
+    image: "bad image format"
+    port: 0
+    healthcheck: "no-slash"
+    path: "no-slash"
+""",
+        encoding="utf-8",
+    )
+    res_bad2 = check_config(tmp_path)
+    svc_bad2 = next((r for r in res_bad2 if r.id == "config.services"), None)
+    assert svc_bad2 is not None
+    assert svc_bad2.status == "FAIL"
+    assert "name must be a non-empty kebab-case string" in svc_bad2.message
+    assert "image must be a valid container image repository path" in svc_bad2.message
+    assert "port must be a positive integer" in svc_bad2.message
+    assert "healthcheck must start with '/'" in svc_bad2.message
+    assert "path must start with '/'" in svc_bad2.message
+
+    # 3. Empty services list: FAIL
+    bad_values.write_text(
+        """
+repo:
+  url: "https://github.com/my-org/my-repo.git"
+app:
+  image: "ghcr.io/my-org/demo-app"
+  port: 8000
+  healthcheck: "/healthz"
+namespace:
+  prefix: "preview"
+tailnet:
+  name: "custom.ts.net"
+services: []
+""",
+        encoding="utf-8",
+    )
+    res_empty = check_config(tmp_path)
+    svc_empty = next((r for r in res_empty if r.id == "config.services"), None)
+    assert svc_empty is not None
+    assert svc_empty.status == "FAIL"
+
+    # 4. Valid services entry: PASS
+    good_values = tmp_path / "values.yaml"
+    good_values.write_text(
+        """
+repo:
+  url: "https://github.com/my-org/my-repo.git"
+app:
+  image: "ghcr.io/my-org/demo-app"
+  port: 8000
+  healthcheck: "/healthz"
+namespace:
+  prefix: "preview"
+tailnet:
+  name: "custom.ts.net"
+services:
+  - name: demo-app
+    image: ghcr.io/my-org/demo-app
+    port: 8000
+    healthcheck: "/healthz"
+    buildDir: demo-app
+    path: "/"
+""",
+        encoding="utf-8",
+    )
+    res_good = check_config(tmp_path)
+    svc_good = next((r for r in res_good if r.id == "config.services"), None)
+    assert svc_good is not None
+    assert svc_good.status == "PASS"
+    assert "1 service(s) configured" in svc_good.message
 
 
 def test_check_secrets_dir_and_permissions(tmp_path: Path) -> None:
@@ -583,3 +743,54 @@ def test_init_idempotent(tmp_path: Path) -> None:
         # Identical byte content on second run
         assert content1_val == content2_val
         assert content1_wf == content2_wf
+
+
+def test_init_with_write_services(tmp_path: Path) -> None:
+    (tmp_path / "values.yaml").write_text("repo:\n  url: 'old'\n", encoding="utf-8")
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    (wf_dir / "preview.yml").write_text("env:\n  TAILNET_NAME: old\n", encoding="utf-8")
+    (wf_dir / "preview-closed.yml").write_text("env:\n  TAILNET_NAME: old\n", encoding="utf-8")
+    inv_dir = tmp_path / "ansible" / "inventory"
+    inv_dir.mkdir(parents=True)
+    (inv_dir / "local.ini").write_text("[k3s_server]\ndevops ansible_host=old\n", encoding="utf-8")
+    sec_dir = tmp_path / "secrets"
+
+    env_vars = {
+        "PREVIEW_REPO_URL": "https://github.com/org/repo.git",
+        "PREVIEW_APP_NAME": "custom-app",
+        "PREVIEW_IMAGE": "ghcr.io/org/custom-app",
+        "PREVIEW_PORT": "4000",
+        "PREVIEW_HEALTHCHECK": "/ready",
+        "PREVIEW_NS_PREFIX": "preview",
+        "PREVIEW_TAILNET": "my-corp.ts.net",
+        "PREVIEW_VM_IP": "192.168.1.100",
+        "TS_OAUTH_CLIENT_ID": "id",
+        "TS_OAUTH_CLIENT_SECRET": "sec",
+        "GITHUB_TOKEN": "gh" + "p_" + "Z" * 36,
+        "PREVIEW_WRITE_SERVICES": "true",
+    }
+
+    with patch.dict(os.environ, env_vars):
+        rc = run_init(
+            repo_root=tmp_path,
+            non_interactive=True,
+            yes=True,
+            skip_doctor=True,
+            secrets_dir=sec_dir,
+            write_services=True,
+        )
+        assert rc == 0
+        content = (tmp_path / "values.yaml").read_text(encoding="utf-8")
+        assert 'name: "custom-app"' in content
+        assert "port: 4000" in content
+        assert "services:" in content
+        assert "- name: custom-app" in content
+        assert "image: ghcr.io/org/custom-app" in content
+        assert "port: 4000" in content
+        assert "healthcheck: /ready" in content
+
+        res = check_config(tmp_path)
+        svc_chk = next((r for r in res if r.id == "config.services"), None)
+        assert svc_chk is not None
+        assert svc_chk.status == "PASS"

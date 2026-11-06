@@ -36,15 +36,47 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7.0.1
 
-      - name: Load centralized configuration from values.yaml
+      - id: config
+        name: Load centralized configuration from values.yaml
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           python3 -c "
-          import yaml
+          import json, os, yaml
           with open('values.yaml') as f:
               cfg = yaml.safe_load(f) or {}
-          print('CONFIG_APP_NAME=' + str(cfg.get('app', {}).get('name', 'demo-app')))
-          print('CONFIG_NS_PREFIX=' + str(cfg.get('namespace', {}).get('prefix', 'preview')))
-          " >> "$GITHUB_ENV"
+          repo_owner = os.environ.get('REPO_OWNER', 'dungx2409').lower()
+          services = []
+          if cfg.get('services'):
+              for s in cfg['services']:
+                  name = str(s.get('name', 'demo-app'))
+                  services.append({
+                      'name': name,
+                      'image': str(s.get('image', f'ghcr.io/{repo_owner}/{name}')),
+                      'port': int(s.get('port', 8000)),
+                      'healthcheck': str(s.get('healthcheck', '/healthz')),
+                      'buildDir': str(s.get('buildDir') or name),
+                      'path': str(s.get('path', '/')),
+                  })
+          else:
+              app = cfg.get('app', {})
+              name = str(app.get('name', 'demo-app'))
+              fallback_img = f'ghcr.io/{repo_owner}/{name}'
+              services.append({
+                  'name': name,
+                  'image': str(app.get('image', fallback_img)),
+                  'port': int(app.get('port', 8000)),
+                  'healthcheck': str(app.get('healthcheck', '/healthz')),
+                  'buildDir': str(app.get('buildDir', name)),
+                  'path': '/',
+              })
+          services_json = json.dumps(services)
+          ns_prefix = str(cfg.get('namespace', {}).get('prefix', 'preview'))
+          print('services=' + services_json)
+          print('ns_prefix=' + ns_prefix)
+          print('CONFIG_SERVICES=' + services_json)
+          print('CONFIG_NS_PREFIX=' + ns_prefix)
+          " | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_ENV"
 
       - name: Deactivate GitHub Deployments
         env:
@@ -78,37 +110,44 @@ jobs:
       - name: Delete GHCR image tags for PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVICES_JSON: ${{ steps.config.outputs.services }}
         run: |
+          set -euo pipefail
+
           PR_NUMBER="${{ github.event.pull_request.number }}"
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          PACKAGE_NAME="${CONFIG_APP_NAME}"
-
-          echo "Querying GHCR versions for package ${PACKAGE_NAME} matching ${CONFIG_NS_PREFIX}-${PR_NUMBER}-*..."
+          SERVICES="${SERVICES_JSON:-${CONFIG_SERVICES:-[]}}"
 
           TAG_PREFIX_1="${CONFIG_NS_PREFIX}-${PR_NUMBER}-"
           TAG_PREFIX_2="pr-${PR_NUMBER}-"
           JQ_QUERY=".[] | select(.metadata.container.tags[]? | "
           JQ_QUERY+="(startswith(\"${TAG_PREFIX_1}\") or startswith(\"${TAG_PREFIX_2}\"))) | .id"
 
-          VERSION_IDS=$(gh api \
-            "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions" \
-            --paginate \
-            --jq "${JQ_QUERY}" 2>/dev/null \
-            | sort -u || true)
+          # Loop over all services parsed from values.yaml (same matrix-loading pattern as preview.yml / fromJson)
+          for PACKAGE_NAME in $(echo "${SERVICES}" | jq -r '.[].name'); do
+            [ -z "${PACKAGE_NAME}" ] && continue
+            echo "Querying GHCR versions for package ${PACKAGE_NAME} matching ${TAG_PREFIX_1}* or ${TAG_PREFIX_2}*..."
 
-          if [ -n "${VERSION_IDS}" ]; then
-            for vid in ${VERSION_IDS}; do
-              echo "Deleting package version ID ${vid}..."
-              if ! gh api --method DELETE \
-                "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions/${vid}"; then
-                echo "Retrying delete via /user/packages endpoint..."
-                gh api --method DELETE \
-                  "user/packages/container/${PACKAGE_NAME}/versions/${vid}" || true
-              fi
-            done
-          else
-            echo "No GHCR package versions found for PR #${PR_NUMBER}."
-          fi
+            VERSION_IDS=$(gh api \
+              "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions" \
+              --paginate \
+              --jq "${JQ_QUERY}" 2>/dev/null \
+              | sort -u || true)
+
+            if [ -n "${VERSION_IDS}" ]; then
+              for vid in ${VERSION_IDS}; do
+                echo "Deleting package ${PACKAGE_NAME} version ID ${vid}..."
+                if ! gh api --method DELETE \
+                  "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions/${vid}"; then
+                  echo "Retrying delete via /user/packages endpoint..."
+                  gh api --method DELETE \
+                    "user/packages/container/${PACKAGE_NAME}/versions/${vid}" || true
+                fi
+              done
+            else
+              echo "No GHCR package versions found for package ${PACKAGE_NAME} (PR #${PR_NUMBER})."
+            fi
+          done
 
       - name: Update PR comment with teardown status
         env:
