@@ -14,6 +14,17 @@ app:
   port: 8000
   healthcheck: "/healthz"
 
+# Multi-service support (monolith = 1 element, microservices = N elements).
+# If omitted or empty, ONE service is derived from the app block above for backward compatibility.
+# The image tag is global (.Values.image.tag or gitSha); services carry no tag of their own.
+# services:
+#   - name: demo-app                    # unique; k8s component label + GHCR package name
+#     image: ghcr.io/dungx2409/demo-app # full image repo WITHOUT tag
+#     port: 8000
+#     healthcheck: /healthz
+#     buildDir: demo-app                # optional, default = name
+#     path: /                           # optional, default = /
+
 replicaCount: 1
 
 # Environment metadata

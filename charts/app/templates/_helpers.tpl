@@ -80,3 +80,168 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Normalized services list for multi-service or single-service (monolith) workloads.
+Produces a list of service maps, each normalized to:
+  name, image, port, healthcheck, buildDir, path.
+When .Values.services is non-empty, iterates over .Values.services and applies defaults.
+When .Values.services is absent/empty, derives one service from the legacy app block
+for full backward compatibility.
+*/}}
+{{- define "app.services" -}}
+{{- $services := list -}}
+{{- if and .Values.services (gt (len .Values.services) 0) -}}
+  {{- range .Values.services -}}
+    {{- $name := .name -}}
+    {{- $image := .image -}}
+    {{- $port := (.port | default 8000) | int -}}
+    {{- $healthcheck := .healthcheck | default "/healthz" -}}
+    {{- $buildDir := .buildDir | default $name -}}
+    {{- $path := .path | default "/" -}}
+    {{- $svc := dict "name" $name "image" $image "port" $port "healthcheck" $healthcheck "buildDir" $buildDir "path" $path -}}
+    {{- $services = append $services $svc -}}
+  {{- end -}}
+{{- else -}}
+  {{- $app := .Values.app | default dict -}}
+  {{- $appName := (get $app "name") | default "demo-app" -}}
+  {{- $appImage := (get $app "image") | default (get (.Values.image | default dict) "repository") | default "ghcr.io/dungx2409/demo-app" -}}
+  {{- $appPort := (get $app "port") | default (get (.Values.service | default dict) "targetPort") | default 8000 | int -}}
+  {{- $appHealthcheck := (get $app "healthcheck") | default "/healthz" -}}
+  {{- $appBuildDir := (get $app "buildDir") | default $appName -}}
+  {{- $appPath := (get $app "path") | default "/" -}}
+  {{- $svc := dict "name" $appName "image" $appImage "port" $appPort "healthcheck" $appHealthcheck "buildDir" $appBuildDir "path" $appPath -}}
+  {{- $services = append $services $svc -}}
+{{- end -}}
+{{- toYaml $services -}}
+{{- end }}
+
+{{/*
+Create a default fully qualified service name.
+Accepts either:
+  - dict with "root" (or "context") and "service" (service map or name string) or "name"
+  - list with [root, service_map_or_name]
+  - root context alone (falls back to app.fullname)
+When .Values.services is absent/empty, returns app.fullname for backward compatibility.
+When .Values.services is present, appends the service name to app.fullname.
+*/}}
+{{- define "app.serviceFullname" -}}
+{{- $root := . -}}
+{{- $svcName := "" -}}
+{{- if kindIs "slice" . -}}
+  {{- $root = index . 0 -}}
+  {{- $s := index . 1 -}}
+  {{- if kindIs "map" $s -}}
+    {{- $svcName = $s.name -}}
+  {{- else -}}
+    {{- $svcName = printf "%s" $s -}}
+  {{- end -}}
+{{- else if kindIs "map" . -}}
+  {{- if hasKey . "root" -}}
+    {{- $root = .root -}}
+  {{- else if hasKey . "context" -}}
+    {{- $root = .context -}}
+  {{- end -}}
+  {{- if hasKey . "service" -}}
+    {{- if kindIs "map" .service -}}
+      {{- $svcName = .service.name -}}
+    {{- else -}}
+      {{- $svcName = printf "%s" .service -}}
+    {{- end -}}
+  {{- else if hasKey . "name" -}}
+    {{- $svcName = .name -}}
+  {{- else if hasKey . "serviceName" -}}
+    {{- $svcName = .serviceName -}}
+  {{- end -}}
+{{- end -}}
+{{- $base := include "app.fullname" $root -}}
+{{- if not (and $root.Values.services (gt (len $root.Values.services) 0)) -}}
+  {{- $base -}}
+{{- else if or (not $svcName) (eq $svcName "app") -}}
+  {{- $base -}}
+{{- else -}}
+  {{- printf "%s-%s" $base $svcName | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Per-service selector labels.
+When .Values.services is absent/empty, keeps component: app for backward compatibility.
+When .Values.services is present, sets component: <service.name>.
+*/}}
+{{- define "app.serviceSelectorLabels" -}}
+{{- $root := . -}}
+{{- $svcName := "" -}}
+{{- if kindIs "slice" . -}}
+  {{- $root = index . 0 -}}
+  {{- $s := index . 1 -}}
+  {{- if kindIs "map" $s -}}
+    {{- $svcName = $s.name -}}
+  {{- else -}}
+    {{- $svcName = printf "%s" $s -}}
+  {{- end -}}
+{{- else if kindIs "map" . -}}
+  {{- if hasKey . "root" -}}
+    {{- $root = .root -}}
+  {{- else if hasKey . "context" -}}
+    {{- $root = .context -}}
+  {{- end -}}
+  {{- if hasKey . "service" -}}
+    {{- if kindIs "map" .service -}}
+      {{- $svcName = .service.name -}}
+    {{- else -}}
+      {{- $svcName = printf "%s" .service -}}
+    {{- end -}}
+  {{- else if hasKey . "name" -}}
+    {{- $svcName = .name -}}
+  {{- else if hasKey . "serviceName" -}}
+    {{- $svcName = .serviceName -}}
+  {{- end -}}
+{{- end -}}
+{{ include "app.selectorLabels" $root }}
+{{- if and $root.Values.services (gt (len $root.Values.services) 0) }}
+app.kubernetes.io/component: {{ $svcName }}
+{{- else }}
+app.kubernetes.io/component: app
+{{- end }}
+{{- end }}
+
+{{/*
+Per-service common labels.
+*/}}
+{{- define "app.serviceLabels" -}}
+{{- $root := . -}}
+{{- $svcName := "" -}}
+{{- if kindIs "slice" . -}}
+  {{- $root = index . 0 -}}
+  {{- $s := index . 1 -}}
+  {{- if kindIs "map" $s -}}
+    {{- $svcName = $s.name -}}
+  {{- else -}}
+    {{- $svcName = printf "%s" $s -}}
+  {{- end -}}
+{{- else if kindIs "map" . -}}
+  {{- if hasKey . "root" -}}
+    {{- $root = .root -}}
+  {{- else if hasKey . "context" -}}
+    {{- $root = .context -}}
+  {{- end -}}
+  {{- if hasKey . "service" -}}
+    {{- if kindIs "map" .service -}}
+      {{- $svcName = .service.name -}}
+    {{- else -}}
+      {{- $svcName = printf "%s" .service -}}
+    {{- end -}}
+  {{- else if hasKey . "name" -}}
+    {{- $svcName = .name -}}
+  {{- else if hasKey . "serviceName" -}}
+    {{- $svcName = .serviceName -}}
+  {{- end -}}
+{{- end -}}
+{{ include "app.labels" $root }}
+{{- if and $root.Values.services (gt (len $root.Values.services) 0) }}
+app.kubernetes.io/component: {{ $svcName }}
+{{- else }}
+app.kubernetes.io/component: app
+{{- end }}
+{{- end }}

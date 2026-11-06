@@ -24,6 +24,20 @@ app:
   # Liveness probe endpoint path
   healthcheck: "/healthz"
 
+# Multi-service workloads configuration (monolith vs microservices).
+# Defines the list of containerized services deployed per environment:
+# - Monolith: exactly 1 service entry (the default below).
+# - Microservices: N service entries, each with unique name, image, port, and path.
+# - Backward compatibility: if `services:` is omitted, the chart derives a service from `app:`.
+# Note: Container image tags remain global across all services (.Values.image.tag).
+services:
+  - name: demo-app                    # unique; k8s component label + GHCR package name
+    image: ghcr.io/dungx2409/demo-app # full image repo WITHOUT tag
+    port: 8000
+    healthcheck: /healthz
+    buildDir: demo-app                # optional, default = name
+    path: /                           # optional, default = /
+
 # Preview environment namespace conventions
 namespace:
   # Prefix used for generated preview namespaces, hostnames, and Argo CD apps.
