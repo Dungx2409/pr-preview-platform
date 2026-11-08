@@ -7,6 +7,7 @@ name: Build & Push Shared Image
       - main
     paths:
       - "demo-app/**"
+      - "values.yaml"
       - ".github/workflows/build.yml"
   workflow_dispatch:
 
@@ -20,48 +21,91 @@ permissions:
   pull-requests: write
 
 jobs:
-  build-and-push:
-    name: Build, Scan & Push
+  setup:
+    name: Load Centralized Matrix Configuration
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 5
+    outputs:
+      services: ${{ steps.config.outputs.services }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
 
-      - name: Load centralized configuration from values.yaml
+      - id: config
+        name: Load centralized configuration from values.yaml
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           python3 -c "
-          import yaml
+          import json, os, yaml
           with open('values.yaml') as f:
               cfg = yaml.safe_load(f) or {}
-          print('CONFIG_APP_NAME=' + str(cfg.get('app', {}).get('name', 'demo-app')))
-          fallback_img = 'ghcr.io/${{ github.repository_owner }}/demo-app'
-          print('CONFIG_APP_IMAGE=' + str(cfg.get('app', {}).get('image', fallback_img)))
-          " >> "$GITHUB_ENV"
+          repo_owner = os.environ.get('REPO_OWNER', 'dungx2409').lower()
+          services = []
+          if cfg.get('services'):
+              for s in cfg['services']:
+                  name = str(s.get('name', 'demo-app'))
+                  services.append({
+                      'name': name,
+                      'image': str(s.get('image', f'ghcr.io/{repo_owner}/{name}')),
+                      'port': int(s.get('port', 8000)),
+                      'healthcheck': str(s.get('healthcheck', '/healthz')),
+                      'buildDir': str(s.get('buildDir') or name),
+                      'path': str(s.get('path', '/')),
+                  })
+          else:
+              app = cfg.get('app', {})
+              name = str(app.get('name', 'demo-app'))
+              fallback_img = f'ghcr.io/{repo_owner}/{name}'
+              services.append({
+                  'name': name,
+                  'image': str(app.get('image', fallback_img)),
+                  'port': int(app.get('port', 8000)),
+                  'healthcheck': str(app.get('healthcheck', '/healthz')),
+                  'buildDir': str(app.get('buildDir', name)),
+                  'path': '/',
+              })
+          print('services=' + json.dumps(services))
+          " >> "$GITHUB_OUTPUT"
 
-      - name: Set Image Name and Tag
+      - id: meta
+        name: Set Short SHA
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
-          IMAGE_NAME="${CONFIG_APP_IMAGE}"
-          echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
-          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    name: Build & Push (${{ matrix.service.name }})
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.setup.outputs.services) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
 
       - name: Build local container image
         run: |
-          BUILD_DIR="${CONFIG_APP_NAME}"
+          BUILD_DIR="${{ matrix.service.buildDir }}"
+          if [ ! -d "${BUILD_DIR}" ]; then
+            BUILD_DIR="${{ matrix.service.name }}"
+          fi
           if [ ! -d "${BUILD_DIR}" ]; then
             BUILD_DIR="demo-app"
           fi
           docker build \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            -t "${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}" \
+            -t "${{ matrix.service.image }}:${{ needs.setup.outputs.short_sha }}" \
             "${BUILD_DIR}/"
 
       - name: Scan container image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: "${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
+          image-ref: "${{ matrix.service.image }}:${{ needs.setup.outputs.short_sha }}"
           format: "table"
           exit-code: "1"
           ignore-unfixed: true
@@ -77,27 +121,37 @@ jobs:
 
       - name: Push container image to GHCR
         run: |
-          docker push "${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}"
+          docker push "${{ matrix.service.image }}:${{ needs.setup.outputs.short_sha }}"
+
+  bump-shared-tag:
+    name: Bump Shared Image Tag in values-shared.yaml
+    needs: [setup, build-and-push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
 
       - name: Create PR to bump shared image tag in values-shared.yaml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHORT_SHA: ${{ needs.setup.outputs.short_sha }}
         run: |
-          sed -i "s/^gitSha: .*/gitSha: \"${{ env.SHORT_SHA }}\"/" charts/app/values-shared.yaml
-          sed -i "s/^  tag: .*/  tag: \"${{ env.SHORT_SHA }}\"/" charts/app/values-shared.yaml
+          sed -i "s/^gitSha: .*/gitSha: \"${SHORT_SHA}\"/" charts/app/values-shared.yaml
+          sed -i "s/^  tag: .*/  tag: \"${SHORT_SHA}\"/" charts/app/values-shared.yaml
 
           if git diff --quiet charts/app/values-shared.yaml; then
             echo "values-shared.yaml already up to date; nothing to commit."
             exit 0
           fi
 
-          BRANCH_NAME="automation/bump-shared-${{ env.SHORT_SHA }}"
+          BRANCH_NAME="automation/bump-shared-${SHORT_SHA}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -B "$BRANCH_NAME"
           git add charts/app/values-shared.yaml
-          git commit -m "chore: bump shared image to ${{ env.SHORT_SHA }}"
+          git commit -m "chore: bump shared image to ${SHORT_SHA}"
           git push -u origin "$BRANCH_NAME" --force
 
           if ! gh pr view "$BRANCH_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
@@ -105,6 +159,6 @@ jobs:
               --repo "${{ github.repository }}" \
               --base main \
               --head "$BRANCH_NAME" \
-              --title "chore: bump shared image to ${{ env.SHORT_SHA }}" \
-              --body "Automated PR from build.yml to update values-shared.yaml (${{ env.SHORT_SHA }})."
+              --title "chore: bump shared image to ${SHORT_SHA}" \
+              --body "Automated PR from build.yml to update values-shared.yaml (${SHORT_SHA})."
           fi

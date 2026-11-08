@@ -87,6 +87,7 @@ def run_init(
     skip_secrets: bool = False,
     skip_doctor: bool = False,
     secrets_dir: Path | None = None,
+    write_services: bool = False,
 ) -> int:
     """Run the initialization wizard."""
     is_tty = sys.stdout.isatty() and not non_interactive
@@ -345,18 +346,23 @@ def run_init(
     # Prepare file modifications
     # 1. values.yaml
     old_values = values_path.read_text(encoding="utf-8") if values_path.exists() else ""
-    new_values = update_values_yaml(
-        old_values,
-        {
-            "repo_url": repo_url,
-            "app_name": app_name,
-            "app_image": app_image,
-            "app_port": app_port,
-            "app_healthcheck": healthcheck,
-            "ns_prefix": ns_prefix,
-            "tailnet_name": tailnet_name,
-        },
-    )
+    should_write_services = write_services or os.environ.get(
+        "PREVIEW_WRITE_SERVICES", ""
+    ).lower() in ("1", "true", "yes")
+
+    values_updates: dict[str, Any] = {
+        "repo_url": repo_url,
+        "app_name": app_name,
+        "app_image": app_image,
+        "app_port": app_port,
+        "app_healthcheck": healthcheck,
+        "ns_prefix": ns_prefix,
+        "tailnet_name": tailnet_name,
+    }
+    if should_write_services:
+        values_updates["write_services"] = True
+
+    new_values = update_values_yaml(old_values, values_updates)
 
     # 2. Workflows
     old_preview_wf = preview_wf.read_text(encoding="utf-8") if preview_wf.exists() else ""
@@ -584,6 +590,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip running preflight health check after configuration",
     )
+    parser.add_argument(
+        "--with-services",
+        "--write-services",
+        action="store_true",
+        dest="write_services",
+        help="Optionally write services list into values.yaml derived from app configuration",
+    )
 
     try:
         args = parser.parse_args(argv)
@@ -599,6 +612,7 @@ def main(argv: list[str] | None = None) -> int:
             yes=args.yes,
             skip_secrets=args.skip_secrets,
             skip_doctor=args.skip_doctor,
+            write_services=args.write_services,
         )
     except Exception as exc:
         msg = redact_secrets(str(exc))

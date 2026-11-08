@@ -141,8 +141,13 @@ ansible-check: ## Run ansible-playbook in check/diff mode
 		exit 1; \
 	fi
 
+.PHONY: golden-check
+golden-check: ## Verify helm template output is byte-identical to golden baseline
+	@echo -e "$(CYAN)→ Verifying Helm template against golden baseline...$(RESET)"
+	@bash scripts/golden-check.sh
+
 .PHONY: helm-template
-helm-template: ## Render Helm chart with sample values and validate
+helm-template: golden-check ## Render Helm chart with sample values and validate
 	@echo -e "$(CYAN)→ Rendering and validating Helm chart...$(RESET)"
 	@if [ -f "charts/app/Chart.yaml" ]; then \
 		helm lint charts/app; \

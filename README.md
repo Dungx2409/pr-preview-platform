@@ -110,17 +110,37 @@ repo:
   url: "https://github.com/Dungx2409/pr-preview-platform.git"
   label: "preview"
 
-# Application container and service settings
+# Application container and service settings (monolith fallback)
 app:
   name: "demo-app"
   image: "ghcr.io/dungx2409/demo-app"
   port: 8000
   healthcheck: "/healthz"
 
+# Multi-service workloads configuration (monolith vs microservices)
+services:
+  - name: demo-app                    # unique; k8s component label + GHCR package name
+    image: ghcr.io/dungx2409/demo-app # full image repo WITHOUT tag
+    port: 8000
+    healthcheck: /healthz
+    buildDir: demo-app                # optional, default = name
+    path: /                           # optional, default = /
+
 # Preview environment namespace conventions
 namespace:
   prefix: "preview"   # Change when running multiple projects in parallel
 ```
+
+### Multi-Service vs. Monolith Architecture
+
+The platform supports both single-container monoliths and multi-container microservices through a unified `services:` list schema:
+- **Monolith:** Exactly 1 service entry (the default above). If `services:` is omitted, the chart transparently derives a service from the legacy `app:` block for 100% backward compatibility.
+- **Microservices:** $N \ge 2$ service entries (e.g. `web` and `api`), each defining its own port, healthcheck endpoint, source build directory, and URL routing path. See [`examples/values-microservices.yaml`](examples/values-microservices.yaml) for a complete reference.
+- **Global-Tag Model:** All services in a preview environment share a single container image tag (`.Values.image.tag` or `pr-<N>-<sha>`). Previews represent a synchronized atomic snapshot of the entire repository at a single git commit SHA; individual services do not carry independent tags.
+- **Multi-Path Ingress Routing:** Tailscale Ingress routes distinct URL paths (`/web`, `/api`) to their corresponding backend ClusterIP services.
+  > [!NOTE]
+  > **Prefix Stripping & Frontend Proxy Fallback:** Tailscale Operator uses standard Kubernetes `pathType: Prefix` rules without native URL rewriting or prefix stripping. Downstream applications should either handle their path prefix natively (e.g. FastAPI `root_path="/api"`), or a frontend reverse proxy (like an nginx container) can handle routing with `proxy_pass` path rewrites.
+- **Golden Baseline Regression Guard:** Single-service default rendering is strictly guarded by `make golden-check` (`scripts/golden-check.sh`), ensuring zero drift against [`tests/golden/helm-template-default.yaml`](tests/golden/helm-template-default.yaml).
 
 ### Switching Projects: "Đổi dự án = sửa `values.yaml`, make sync-config, Argo sync"
 
@@ -182,6 +202,12 @@ In order for your application repository to automatically build container images
 - **Pre-configured Dashboard:** 11-panel Grafana dashboard visualizing live preview inventory, time-to-ready quantiles (p50/p95), and node headroom.
 - **Alert Rules:** Alerting on low VM memory headroom (< 20%), reaper activations, and Tailscale proxy readiness.
 
+### Multi-Service Workloads & Path-Based Routing
+- **Unified Chart & Schema:** Supports both single-service monoliths ($N=1$) and multi-tier microservices ($N \ge 2$) under one chart (`charts/app`).
+- **Global-Tag Snapshot:** Single image tag guarantees atomic, coherent deployments of all services per commit.
+- **Path-Based Ingress:** Multiplexes distinct services (e.g. `/web`, `/api`) under one Tailscale HTTPS endpoint with automated inter-service NetworkPolicies.
+- **Golden Baseline Verification:** Byte-identical regression protection for default configurations via `make golden-check`.
+
 ---
 
 ## 6. Repository Structure
@@ -201,6 +227,7 @@ In order for your application repository to automatically build container images
 │   ├── runbook.md              # Day-2 operations, troubleshooting, and Disaster Recovery SOP
 │   ├── security.md             # Security matrix, threat model, and verification results
 │   └── versions.md             # Pinned software, chart, and tool versions
+├── examples/                   # Reference values configurations (e.g. values-microservices.yaml)
 ├── exporter/                   # Python preview-exporter daemon and ServiceMonitor definitions
 ├── platform/                   # Platform configurations
 │   ├── argocd/                 # Argo CD ApplicationSet, AppProject, and Applications
@@ -572,6 +599,7 @@ make bootstrap-platform
 | `make sync-config` | Synchronize platform manifests with root `values.yaml` |
 | `make lint` | Run all linters (`check-config`, `check-configmaps`, `yamllint`, `ansible-lint`, `shellcheck`, `ruff`, `gitleaks`, `helm lint`, `trivy`) |
 | `make test` | Run all 39 unit tests (FastAPI app, exporter, reaper, and preview_cli) |
+| `make golden-check` | Verify Helm template output is byte-identical to golden baseline (`tests/golden/`) |
 | `make helm-template` | Render Helm chart with sample values and validate dry-run Kubernetes manifests |
 | `make verify-security` | Run automated security audit against cluster (PSS, NetworkPolicy, DNS isolation) |
 | `make verify-teardown` | Verify zero lingering preview namespaces or proxy pods remain in cluster |

@@ -23,69 +23,90 @@ env:
   TAILNET_NAME: taildc1471.ts.net
 
 jobs:
-  build-preview:
-    name: Build, Scan & Push PR Preview Image
+  setup:
+    name: Load Centralized Matrix Configuration
     if: >-
       contains(github.event.pull_request.labels.*.name, 'preview') &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 5
+    outputs:
+      services: ${{ steps.config.outputs.services }}
+      ns_prefix: ${{ steps.config.outputs.ns_prefix }}
+      tailnet_name: ${{ steps.config.outputs.tailnet_name }}
+      tag_8: ${{ steps.meta.outputs.tag_8 }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
     steps:
       - name: Checkout PR head
         uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Load centralized configuration from values.yaml
+      - id: config
+        name: Load centralized configuration from values.yaml
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           python3 -c "
-          import yaml
+          import json, os, yaml
           with open('values.yaml') as f:
               cfg = yaml.safe_load(f) or {}
-          print('CONFIG_REPO_LABEL=' + str(cfg.get('repo', {}).get('label', 'preview')))
-          print('CONFIG_APP_NAME=' + str(cfg.get('app', {}).get('name', 'demo-app')))
-          fallback_img = 'ghcr.io/${{ github.repository_owner }}/demo-app'
-          print('CONFIG_APP_IMAGE=' + str(cfg.get('app', {}).get('image', fallback_img)))
-          print('CONFIG_APP_PORT=' + str(cfg.get('app', {}).get('port', 8000)))
-          print('CONFIG_APP_HEALTHCHECK=' + str(cfg.get('app', {}).get('healthcheck', '/healthz')))
-          print('CONFIG_NS_PREFIX=' + str(cfg.get('namespace', {}).get('prefix', 'preview')))
-          print('CONFIG_TAILNET_NAME=' + str(cfg.get('tailnet', {}).get('name', 'taildc1471.ts.net')))
-          " >> "$GITHUB_ENV"
+          repo_owner = os.environ.get('REPO_OWNER', 'dungx2409').lower()
+          services = []
+          if cfg.get('services'):
+              for s in cfg['services']:
+                  name = str(s.get('name', 'demo-app'))
+                  services.append({
+                      'name': name,
+                      'image': str(s.get('image', f'ghcr.io/{repo_owner}/{name}')),
+                      'port': int(s.get('port', 8000)),
+                      'healthcheck': str(s.get('healthcheck', '/healthz')),
+                      'buildDir': str(s.get('buildDir') or name),
+                      'path': str(s.get('path', '/')),
+                  })
+          else:
+              app = cfg.get('app', {})
+              name = str(app.get('name', 'demo-app'))
+              fallback_img = f'ghcr.io/{repo_owner}/{name}'
+              services.append({
+                  'name': name,
+                  'image': str(app.get('image', fallback_img)),
+                  'port': int(app.get('port', 8000)),
+                  'healthcheck': str(app.get('healthcheck', '/healthz')),
+                  'buildDir': str(app.get('buildDir', name)),
+                  'path': '/',
+              })
+          print('services=' + json.dumps(services))
+          print('ns_prefix=' + str(cfg.get('namespace', {}).get('prefix', 'preview')))
+          print('tailnet_name=' + str(cfg.get('tailnet', {}).get('name', 'taildc1471.ts.net')))
+          " >> "$GITHUB_OUTPUT"
 
-      - name: Set Image Name and Tag
+      - id: meta
+        name: Set Image Tag and Commit Metadata
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
           SHORT_SHA_7=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
           SHORT_SHA_8=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-8)
-          IMAGE_NAME="${CONFIG_APP_IMAGE}"
-          echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
-          echo "TAG_8=${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_8}" >> "$GITHUB_ENV"
-          echo "SHORT_SHA=${SHORT_SHA_7}" >> "$GITHUB_ENV"
-          echo "Tag: ${CONFIG_NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_8}"
+          NS_PREFIX="${{ steps.config.outputs.ns_prefix }}"
+          TAG_8="${NS_PREFIX}-${PR_NUMBER}-${SHORT_SHA_8}"
+          echo "tag_8=${TAG_8}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA_7}" >> "$GITHUB_OUTPUT"
 
-      - name: Build local container image
-        run: |
-          DESC="PR Preview image for PR #${{ github.event.pull_request.number }}"
-          BUILD_DIR="${CONFIG_APP_NAME}"
-          if [ ! -d "${BUILD_DIR}" ]; then
-            BUILD_DIR="demo-app"
-          fi
-          docker build \
-            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.description=${DESC}" \
-            -t "${{ env.IMAGE_NAME }}:${{ env.TAG_8 }}" \
-            "${BUILD_DIR}/"
-
-      - name: Scan container image with Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
+  build-preview:
+    name: Build Preview (${{ matrix.service.name }})
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.setup.outputs.services) }}
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v7.0.1
         with:
-          image-ref: "${{ env.IMAGE_NAME }}:${{ env.TAG_8 }}"
-          format: "table"
-          exit-code: "1"
-          ignore-unfixed: true
-          vuln-type: "os,library"
-          severity: "CRITICAL,HIGH"
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4.6.0
@@ -94,16 +115,151 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push container image to GHCR
+      - id: service_action
+        name: Detect code changes or retag unchanged service
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BEFORE_SHA: ${{ github.event.before }}
+          IMAGE_NAME: ${{ matrix.service.image }}
+          SERVICE_NAME: ${{ matrix.service.name }}
+          BUILD_DIR_INPUT: ${{ matrix.service.buildDir }}
+          CONFIG_NS_PREFIX: ${{ needs.setup.outputs.ns_prefix }}
+          NEW_TAG: ${{ needs.setup.outputs.tag_8 }}
+          REPO_OWNER_RAW: ${{ github.repository_owner }}
         run: |
-          docker push "${{ env.IMAGE_NAME }}:${{ env.TAG_8 }}"
+          set -euo pipefail
 
+          REPO_OWNER=$(echo "${REPO_OWNER_RAW}" | tr '[:upper:]' '[:lower:]')
+          BUILD_DIR="${BUILD_DIR_INPUT}"
+          if [ -z "${BUILD_DIR}" ] || [ ! -d "${BUILD_DIR}" ]; then
+            if [ -d "${SERVICE_NAME}" ]; then
+              BUILD_DIR="${SERVICE_NAME}"
+            else
+              BUILD_DIR="demo-app"
+            fi
+          fi
+
+          echo "Evaluating changes in '${BUILD_DIR}' against base '${BASE_REF}'..."
+          CHANGED=false
+
+          if [ -n "${BASE_SHA}" ] && ! git rev-parse --verify "${BASE_SHA}^{commit}" >/dev/null 2>&1; then
+            echo "Fetching base commit ${BASE_SHA}..."
+            git fetch origin "${BASE_REF}" --depth=50 || true
+          fi
+
+          MERGE_BASE=$(git merge-base "${BASE_SHA}" HEAD 2>/dev/null || \
+                       git merge-base "origin/${BASE_REF}" HEAD 2>/dev/null || \
+                       echo "${BASE_SHA}")
+
+          if [ -z "${MERGE_BASE}" ] || ! git rev-parse --verify "${MERGE_BASE}^{commit}" >/dev/null 2>&1; then
+            echo "Unable to calculate merge base against ${BASE_REF}; falling back to build."
+            CHANGED=true
+          else
+            DIFF_FILES=$(git diff --name-only "${MERGE_BASE}" HEAD -- "${BUILD_DIR}" || true)
+            if [ -n "${DIFF_FILES}" ]; then
+              echo "Changes detected in ${BUILD_DIR}:"
+              echo "${DIFF_FILES}"
+              CHANGED=true
+            else
+              echo "No changes detected in ${BUILD_DIR} vs base."
+            fi
+          fi
+
+          ACTION="build"
+          if [ "${CHANGED}" = "false" ]; then
+            echo "Service ${SERVICE_NAME} unchanged. Searching for existing PR image to retag..."
+            PACKAGE_NAME=$(basename "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
+            TAG_PREFIX_1="${CONFIG_NS_PREFIX}-${PR_NUMBER}-"
+            TAG_PREFIX_2="pr-${PR_NUMBER}-"
+
+            JQ_FILTER=".[] | .metadata.container.tags[]? | "
+            JQ_FILTER+="select(startswith(\"${TAG_PREFIX_1}\") or startswith(\"${TAG_PREFIX_2}\"))"
+
+            OLD_TAG=$(gh api "users/${REPO_OWNER}/packages/container/${PACKAGE_NAME}/versions" \
+              --jq "${JQ_FILTER}" 2>/dev/null \
+              | grep -v "^${NEW_TAG}$" | head -n 1 || true)
+
+            if [ -z "${OLD_TAG}" ] && [ -n "${BEFORE_SHA}" ] && \
+               [ "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]; then
+              BEFORE_SHA_8=$(echo "${BEFORE_SHA}" | cut -c1-8)
+              CANDIDATE_TAG="${CONFIG_NS_PREFIX}-${PR_NUMBER}-${BEFORE_SHA_8}"
+              if [ "${CANDIDATE_TAG}" != "${NEW_TAG}" ]; then
+                OLD_TAG="${CANDIDATE_TAG}"
+              fi
+            fi
+
+            if [ -n "${OLD_TAG}" ]; then
+              echo "Found previous PR tag: ${OLD_TAG}. Attempting docker pull and retag..."
+              if docker pull "${IMAGE_NAME}:${OLD_TAG}"; then
+                docker tag "${IMAGE_NAME}:${OLD_TAG}" "${IMAGE_NAME}:${NEW_TAG}"
+                if docker push "${IMAGE_NAME}:${NEW_TAG}"; then
+                  echo "Retag successful: ${IMAGE_NAME}:${NEW_TAG}"
+                  ACTION="retagged"
+                else
+                  echo "Failed to push retagged image; falling back to build."
+                fi
+              else
+                echo "Failed to pull previous image ${IMAGE_NAME}:${OLD_TAG}; falling back to build."
+              fi
+            else
+              echo "No previous image tag found for PR #${PR_NUMBER}; building fresh."
+            fi
+          fi
+
+          echo "action=${ACTION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build local container image
+        if: steps.service_action.outputs.action == 'build'
+        run: |
+          DESC="PR Preview image for PR #${{ github.event.pull_request.number }}"
+          BUILD_DIR="${{ matrix.service.buildDir }}"
+          if [ ! -d "${BUILD_DIR}" ]; then
+            BUILD_DIR="${{ matrix.service.name }}"
+          fi
+          if [ ! -d "${BUILD_DIR}" ]; then
+            BUILD_DIR="demo-app"
+          fi
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.description=${DESC}" \
+            -t "${{ matrix.service.image }}:${{ needs.setup.outputs.tag_8 }}" \
+            "${BUILD_DIR}/"
+
+      - name: Scan container image with Trivy
+        if: steps.service_action.outputs.action == 'build'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "${{ matrix.service.image }}:${{ needs.setup.outputs.tag_8 }}"
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
+
+      - name: Push container image to GHCR
+        if: steps.service_action.outputs.action == 'build'
+        run: |
+          docker push "${{ matrix.service.image }}:${{ needs.setup.outputs.tag_8 }}"
+
+  notify-preview:
+    name: Update PR Comment & Deployment Status
+    needs: [setup, build-preview]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
       - name: Upsert PR comment with preview link
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFIG_NS_PREFIX: ${{ needs.setup.outputs.ns_prefix }}
+          CONFIG_TAILNET_NAME: ${{ needs.setup.outputs.tailnet_name }}
+          TAG_8: ${{ needs.setup.outputs.tag_8 }}
+          SHORT_SHA: ${{ needs.setup.outputs.short_sha }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${{ env.CONFIG_TAILNET_NAME }}/"
+          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${CONFIG_TAILNET_NAME}/"
           ENV_NAME="${CONFIG_NS_PREFIX}-${PR_NUMBER}"
           MARKER="<!-- pr-preview-platform-comment -->"
 
@@ -115,12 +271,12 @@ jobs:
           |---|---|
           | **Preview URL** | [${PREVIEW_URL}](${PREVIEW_URL}) |
           | **Environment** | \`${ENV_NAME}\` |
-          | **Image Tag** | \`${{ env.TAG_8 }}\` |
-          | **Commit** | \`${{ env.SHORT_SHA }}\` |
+          | **Image Tag** | \`${TAG_8}\` |
+          | **Commit** | \`${SHORT_SHA}\` |
           | **Status** | Pushed to GHCR; live once Argo CD reconciles (~30–60s) |
 
           > 🔒 **Access Note:** Reachable only by authenticated members
-          > of the Tailscale tailnet (\`${{ env.CONFIG_TAILNET_NAME }}\`).
+          > of the Tailscale tailnet (\`${CONFIG_TAILNET_NAME}\`).
           EOF
           )
 
@@ -140,9 +296,11 @@ jobs:
       - name: Create GitHub Deployment status
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFIG_NS_PREFIX: ${{ needs.setup.outputs.ns_prefix }}
+          CONFIG_TAILNET_NAME: ${{ needs.setup.outputs.tailnet_name }}
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
-          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${{ env.CONFIG_TAILNET_NAME }}/"
+          PREVIEW_URL="https://${CONFIG_NS_PREFIX}-${PR_NUMBER}.${CONFIG_TAILNET_NAME}/"
           ENV_NAME="${CONFIG_NS_PREFIX}-${PR_NUMBER}"
 
           echo "Creating deployment for environment ${ENV_NAME}..."

@@ -23,6 +23,7 @@
 | D-012 | 2026-10-23 | **Chuyển sang SPEC v2.0:** local-first (VirtualBox VM), chia sẻ preview **riêng tư** qua Tailscale tailnet, **2 tier** (Tier 1 shared + Tier 2 per-PR). GCP/domain/Funnel là tùy chọn ở Phase 8. Supersedes toàn bộ nội dung v1 liên quan đến GCP bắt buộc, domain, và public TLS. | Không cần cloud account hay domain để bắt đầu; 24 GB RAM đủ; private-by-default phù hợp với nhóm nhỏ; hai tier thể hiện cả shared-staging lẫn per-PR isolation. | Accepted |
 | D-013 | 2026-10-23 | **Tailscale Kubernetes Operator** (Ingress `ingressClassName: tailscale`, **không dùng Funnel**) để mỗi preview có URL `https://<name>.<tailnet>.ts.net` với TLS hợp lệ, chỉ truy cập được bởi thành viên tailnet. Fallback nếu NO-GO: `tailscale serve` trên VM + sslip.io/Traefik bên trong tailnet/LAN. | Không cần domain riêng; TLS tự động; private mặc định; operator chạy trong cluster, giữ pull-based. Spike T-2.0 xác nhận overhead cực thấp (16.5 MiB RAM/proxy), teardown sạch, không zombie devices. | **Accepted (GO via T-2.0)** |
 | D-014 | 2026-10-23 | **Preview readiness notification:** Chọn **Option C** (SPEC §6.7: CI post comment link ngay sau khi push image, time-to-ready đo bằng in-cluster exporter). | Tránh phụ thuộc VPN vào CI runner, không tốn quota ephemeral minutes (1 000 min/tháng), cluster không cấp credentials cho CI. | Accepted (T-2.0) |
+| D-015 | 2026-11-06 | **One chart + one `services:` schema for monolith & microservices.** Root `values.yaml` gains a `services:` list (monolith = 1 element, microservices = N); the chart derives one service from `app:` when `services` is absent (backward-compatible, byte-identical). Image tag stays GLOBAL (one tag per environment) so the ApplicationSet keeps its single-tag model and CI "retags" unchanged services. | Avoids two charts/schemas; a byte-identical golden check guarantees no regression for the existing single-service demo-app. | Accepted |
 
 ## Metrics (measured only — fill when you actually measure)
 
@@ -138,6 +139,26 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-11-06 — T-9.1..T-9.10 — Multi-service chart & schema (services list)
+
+**Did:** Added one-chart/one-schema support for monolith + microservices across 10 tasks, delegated to 10 Orca workers (Antigravity / `gemini-3.8-flash`, high) in 4 waves, reviewed + integrated by the coordinator.
+- `values.yaml` + `charts/app/values-shared.yaml`: new `services:` list (demo-app), backward-compatible with `app:`.
+- `charts/app/templates/_helpers.tpl`: `app.services` (normalized list + derive-from-`app` fallback), `app.serviceFullname`/`serviceSelectorLabels`/`serviceLabels`.
+- `deployment.yaml`/`service.yaml`/`ingress.yaml`/`networkpolicy.yaml`: iterate over services; ingress multi-path; inter-service egress; per-service allow-postgres.
+- `.github/workflows/build.yml`/`preview.yml`/`preview-closed.yml`: job matrix over services, build-changed/retag-unchanged, teardown deletes all service tags.
+- `scripts/sync-config.py` + `scripts/preview_cli/*` + tests: services validation, `init --with-services`, 42 tests.
+- `examples/values-microservices.yaml` + `scripts/golden-check.sh` + `make golden-check` + docs (architecture / decisions D-015 / README).
+
+**Why:** One chart + one schema avoids a fork for microservices; the global-tag model preserves the ApplicationSet's single tag and lets CI "retag" unchanged services instead of rebuilding them.
+
+**Verified (coordinator, locally):** golden byte-identical (`helm template test-app charts/app` vs `tests/golden/helm-template-default.yaml`); `make lint` green (yamllint/shellcheck/ruff/gitleaks/helm/trivy all 0 findings); `make test` 42 passed; `make helm-template` (kubeconform 12 resources valid); `make check-config` green; microservices example renders 2 Deployments + 2 Services + 1 Ingress (2 paths) + 3 NetworkPolicies.
+
+**Gotchas / decisions:** D-015 (see Decisions). Tailscale Operator prefix-stripping is unverified → default = apps serve under their prefix or FE `nginx proxy_pass`. CI matrix/retag needs a real labeled-PR run to fully verify.
+
+**Learned (interview note):** A "golden file" test — rendering the chart with default values and byte-diffing against a committed baseline — is a cheap way to guarantee a refactor doesn't change existing behavior, which is exactly how you safely evolve a Helm chart from single-service to multi-service.
+
+**Next:** [!] T-9.3 Tailscale multi-path spike + [!] T-9.7 CI real-run (see TASK.md Blockers). Then a real multi-service PR end-to-end.
 
 ### 2026-11-06 — T-8.1 — Terraform IaC (AWS variant) verified on LocalStack
 **Did:** Implemented Phase 8 Terraform IaC under `infra/terraform/` targeting **AWS** (instead of GCP — no cloud account) and verified the full lifecycle on **LocalStack**. Files: `versions.tf` (terraform `~>1.17`, hashicorp/aws `~>5.100.0`), `main.tf` (VPC, public subnet, IGW, route table, security group [SSH 22 owner-only, **6443 denied**], EC2, Elastic IP + association), `variables.tf` (typed+described), `outputs.tf` (`public_ip` sensitive), `backend.tf` (S3 + DynamoDB lock), `terraform.tfvars.example`, `README.md`. Pinned versions added to `docs/versions.md`. Delegated to an Orca worker (Antigravity / `gemini-3.8-flash`, high effort); reviewed + integrated by coordinator.

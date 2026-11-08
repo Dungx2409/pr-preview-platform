@@ -1,0 +1,486 @@
+---
+# Source: app/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-app-default-deny
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: isolation
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Source: app/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-app-allow-app
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: isolation
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: app
+      app.kubernetes.io/component: app
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress from Tailscale operator proxy pods
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Allow ingress from within the same preview namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow connection to PostgreSQL database in the same namespace
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: database
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Source: app/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-app-allow-postgres
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: isolation
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: database
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow PostgreSQL connections ONLY from the app pods in the same namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: app
+              app.kubernetes.io/component: app
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress: []
+---
+# Source: app/templates/resourcequota.yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: test-app-quota
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: isolation
+spec:
+  hard:
+    requests.cpu: "600m"
+    requests.memory: "512Mi"
+    limits.cpu: "1500m"
+    limits.memory: "1Gi"
+    pods: "10"
+    persistentvolumeclaims: "2"
+---
+# Source: app/templates/limitrange.yaml
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: test-app-limits
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: isolation
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "300m"
+        memory: "256Mi"
+      defaultRequest:
+        cpu: "50m"
+        memory: "64Mi"
+      max:
+        cpu: "1000m"
+        memory: "512Mi"
+      min:
+        cpu: "10m"
+        memory: "16Mi"
+---
+# Source: app/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-app
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+automountServiceAccountToken: false
+---
+# Source: app/templates/postgres-secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: test-app-postgres
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: database
+type: Opaque
+stringData:
+  POSTGRES_USER: "postgres"
+  POSTGRES_PASSWORD: "b58b0cb4ecdea3c6"
+  POSTGRES_DB: "appdb"
+---
+# Source: app/templates/postgres-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-app-postgres
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgresql
+  selector:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/component: database
+---
+# Source: app/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-app
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: app
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/component: app
+---
+# Source: app/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-app
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app
+      app.kubernetes.io/instance: test-app
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app
+        app.kubernetes.io/instance: test-app
+        app.kubernetes.io/component: app
+    spec:
+      serviceAccountName: test-app
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: "ghcr.io/dungx2409/demo-app:1.0.0"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: ENV_NAME
+              value: "default"
+            - name: PR_NUMBER
+              value: "local"
+            - name: GIT_SHA
+              value: "unknown"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-app-postgres
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-app-postgres
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: test-app-postgres
+                  key: POSTGRES_DB
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@test-app-postgres:5432/$(POSTGRES_DB)"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 250m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+# Source: app/templates/postgres-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-app-postgres
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app
+      app.kubernetes.io/instance: test-app
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app
+        app.kubernetes.io/instance: test-app
+        app.kubernetes.io/component: database
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 70
+        runAsGroup: 70
+        runAsNonRoot: true
+        runAsUser: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: "postgres:16-alpine"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+            runAsGroup: 70
+            runAsNonRoot: true
+            runAsUser: 70
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-app-postgres
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-app-postgres
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: test-app-postgres
+                  key: POSTGRES_DB
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - appdb
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - appdb
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 5
+          resources:
+            limits:
+              cpu: 250m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+# Source: app/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: test-app
+  labels:
+    helm.sh/chart: app-0.1.0
+    app.kubernetes.io/name: app
+    app.kubernetes.io/instance: test-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: ingress
+spec:
+  ingressClassName: tailscale
+  rules:
+    - host: test-app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: test-app
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - test-app

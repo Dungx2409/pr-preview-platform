@@ -10,6 +10,15 @@ image:
   tag: "55c3886"
   pullPolicy: Always
 
+# Multi-service workloads configuration (Tier 1 shared environment)
+services:
+  - name: demo-app                    # unique; k8s component label + GHCR package name
+    image: ghcr.io/dungx2409/demo-app # full image repo WITHOUT tag
+    port: 8000
+    healthcheck: /healthz
+    buildDir: demo-app                # optional, default = name
+    path: /                           # optional, default = /
+
 ingress:
   enabled: true
   className: tailscale

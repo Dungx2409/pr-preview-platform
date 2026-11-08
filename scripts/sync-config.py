@@ -40,6 +40,77 @@ def parse_repo_coordinates(
     return explicit_owner or m.group(1), explicit_repo or m.group(2)
 
 
+def is_valid_image(image: str) -> bool:
+    """Validate container image repository path (without tag).
+
+    Accepts 'ghcr.io/...' or any valid registry repository path (e.g., 'docker.io/owner/repo',
+    'localhost:5000/app'). Must not contain image tags.
+    """
+    if not isinstance(image, str) or not image.strip():
+        return False
+    clean_image = image.strip()
+    if ":" in clean_image.split("/")[-1]:
+        return False
+    pattern = re.compile(r"^(?:[a-zA-Z0-9.-]+(?::[0-9]+)?/)+[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*$")
+    return bool(pattern.match(clean_image))
+
+
+def validate_services(services: Any) -> list[str]:
+    """Validate services list against schema requirements.
+
+    Each service entry must have:
+    - non-empty 'name'
+    - non-empty 'image' pointing to 'ghcr.io/...' or a valid registry path (without tag)
+    - positive integer 'port' (1-65535)
+    - 'healthcheck' endpoint starting with '/'
+    """
+    errors: list[str] = []
+    if services is None:
+        errors.append("'services' list cannot be null.")
+        return errors
+    if not isinstance(services, list):
+        errors.append(
+            f"'services' must be a list of service objects, got {type(services).__name__}."
+        )
+        return errors
+    if len(services) == 0:
+        errors.append("'services' list cannot be empty.")
+        return errors
+
+    for i, svc in enumerate(services):
+        if not isinstance(svc, dict):
+            errors.append(f"services[{i}] must be a mapping/dict, got {type(svc).__name__}.")
+            continue
+
+        raw_name = svc.get("name")
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            svc_label = f"services[{i}]"
+            errors.append(f"{svc_label}: 'name' must be a non-empty string.")
+        else:
+            svc_label = f"services[{i}] ('{raw_name.strip()}')"
+
+        image = svc.get("image")
+        if not isinstance(image, str) or not image.strip():
+            errors.append(f"{svc_label}: 'image' must be a non-empty string.")
+        elif not is_valid_image(image):
+            errors.append(
+                f"{svc_label}: 'image' must be 'ghcr.io/...' or a valid registry path "
+                f"(without tag), got {image!r}."
+            )
+
+        port = svc.get("port")
+        if isinstance(port, bool) or not isinstance(port, int) or port <= 0:
+            errors.append(f"{svc_label}: 'port' must be a positive integer, got {port!r}.")
+        elif port > 65535:
+            errors.append(f"{svc_label}: 'port' must be between 1 and 65535, got {port}.")
+
+        healthcheck = svc.get("healthcheck")
+        if not isinstance(healthcheck, str) or not healthcheck.startswith("/"):
+            errors.append(f"{svc_label}: 'healthcheck' must start with '/', got {healthcheck!r}.")
+
+    return errors
+
+
 def sync_applicationset(
     content: str,
     owner: str,
@@ -124,10 +195,16 @@ def main() -> int:
         action="store_true",
         help="Check if files are in sync without writing",
     )
+    parser.add_argument(
+        "--values",
+        type=Path,
+        default=None,
+        help="Path to values.yaml (default: root values.yaml)",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
-    values_path = repo_root / "values.yaml"
+    values_path = args.values.resolve() if args.values else (repo_root / "values.yaml")
     appset_path = repo_root / "platform" / "argocd" / "applicationset-previews.yaml"
     appproj_path = repo_root / "platform" / "argocd" / "project-previews.yaml"
     appshared_path = repo_root / "platform" / "argocd" / "application-shared.yaml"
@@ -143,6 +220,19 @@ def main() -> int:
     repo_url = repo_cfg.get("url", "").strip()
     if not repo_url:
         print("ERROR: 'repo.url' is required in values.yaml.", file=sys.stderr)
+        return 1
+
+    # Validate services list (or fallback to app block if services is omitted)
+    if "services" in cfg:
+        service_errors = validate_services(cfg["services"])
+    elif "app" in cfg and isinstance(cfg["app"], dict):
+        service_errors = validate_services([cfg["app"]])
+    else:
+        service_errors = ["'services' list is required in values.yaml."]
+
+    if service_errors:
+        for err in service_errors:
+            print(f"ERROR: {err}", file=sys.stderr)
         return 1
 
     repo_label = repo_cfg.get("label", "preview")

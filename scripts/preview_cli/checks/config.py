@@ -15,6 +15,10 @@ DNS_LABEL_REGEX = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 GITHUB_HTTPS_REGEX = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$")
 # GHCR image format regex: ghcr.io/owner/package
 GHCR_IMAGE_REGEX = re.compile(r"^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+$")
+# Container image repository format regex (ghcr.io/owner/package or other registry/repo)
+CONTAINER_IMAGE_REGEX = re.compile(
+    r"^(?:ghcr\.io|[a-z0-9_.-]+(?:\.[a-z0-9_.-]+)+(?::\d+)?)/[a-z0-9_.-]+(?:/[a-z0-9_.-]+)*$"
+)
 
 
 def _extract_workflow_tailnet(workflow_path: Path) -> str | None:
@@ -176,7 +180,111 @@ def check_config(repo_root: Path) -> list[CheckResult]:
             )
         )
 
-    # 6. Manifest sync check (reuse existing check-config logic)
+    # 6. services (optional multi-service configuration)
+    if "services" in cfg:
+        services = cfg.get("services")
+        if not isinstance(services, list) or len(services) == 0:
+            results.append(
+                CheckResult(
+                    id="config.services",
+                    title="Services configuration (services)",
+                    status="FAIL",
+                    message="services must be a non-empty list of service definitions",
+                    fix="Define at least one service entry under services: or omit the field",
+                )
+            )
+        else:
+            errors: list[str] = []
+            seen_names: set[str] = set()
+
+            for idx, svc in enumerate(services):
+                if not isinstance(svc, dict):
+                    errors.append(f"services[{idx}] must be a mapping, got {type(svc).__name__}")
+                    continue
+
+                # 1. name: non-empty, kebab-case (RFC 1123 DNS label)
+                name = svc.get("name")
+                if (
+                    not isinstance(name, str)
+                    or not name.strip()
+                    or not DNS_LABEL_REGEX.match(name.strip())
+                ):
+                    errors.append(
+                        f"services[{idx}].name must be a non-empty kebab-case string, got: {name!r}"
+                    )
+                else:
+                    if name in seen_names:
+                        errors.append(
+                            f"services[{idx}].name '{name}' is duplicated (names must be unique)"
+                        )
+                    seen_names.add(name)
+
+                # 2. image: valid container registry path
+                image = svc.get("image")
+                if not isinstance(image, str) or not CONTAINER_IMAGE_REGEX.match(
+                    image.strip().lower()
+                ):
+                    errors.append(
+                        f"services[{idx}].image must be a valid container image repository path, "
+                        f"got: {image!r}"
+                    )
+
+                # 3. port: positive integer (1-65535)
+                port = svc.get("port")
+                if not isinstance(port, int) or isinstance(port, bool) or port <= 0 or port > 65535:
+                    errors.append(
+                        f"services[{idx}].port must be a positive integer between 1 and 65535, "
+                        f"got: {port!r}"
+                    )
+
+                # 4. healthcheck: starts with /
+                healthcheck = svc.get("healthcheck")
+                if not isinstance(healthcheck, str) or not healthcheck.startswith("/"):
+                    errors.append(
+                        f"services[{idx}].healthcheck must start with '/', got: {healthcheck!r}"
+                    )
+
+                # 5. path (optional): starts with /
+                path = svc.get("path")
+                if path is not None and (not isinstance(path, str) or not path.startswith("/")):
+                    errors.append(f"services[{idx}].path must start with '/', got: {path!r}")
+
+                # 6. buildDir (optional): non-empty string
+                build_dir = svc.get("buildDir")
+                if build_dir is not None and (
+                    not isinstance(build_dir, str) or not build_dir.strip()
+                ):
+                    errors.append(
+                        f"services[{idx}].buildDir must be a non-empty string when defined, "
+                        f"got: {build_dir!r}"
+                    )
+
+            if errors:
+                results.append(
+                    CheckResult(
+                        id="config.services",
+                        title="Services configuration (services)",
+                        status="FAIL",
+                        message="; ".join(errors),
+                        fix=(
+                            "Ensure each entry in services: has valid name, image, port > 0, "
+                            "healthcheck starting with '/', and optional path starting with '/'"
+                        ),
+                    )
+                )
+            else:
+                results.append(
+                    CheckResult(
+                        id="config.services",
+                        title="Services configuration (services)",
+                        status="PASS",
+                        message=(
+                            f"Valid services configuration ({len(services)} service(s) configured)"
+                        ),
+                    )
+                )
+
+    # 7. Manifest sync check (reuse existing check-config logic)
     sync_script = repo_root / "scripts" / "sync-config.py"
     if sync_script.exists():
         try:
@@ -214,7 +322,7 @@ def check_config(repo_root: Path) -> list[CheckResult]:
                 )
             )
 
-    # 7. TAILNET_NAME in preview.yml and preview-closed.yml
+    # 8. TAILNET_NAME in preview.yml and preview-closed.yml
     preview_wf = repo_root / ".github" / "workflows" / "preview.yml"
     preview_closed_wf = repo_root / ".github" / "workflows" / "preview-closed.yml"
 

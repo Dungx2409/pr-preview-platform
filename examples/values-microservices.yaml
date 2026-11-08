@@ -1,0 +1,70 @@
+---
+# ==============================================================================
+# Microservices Example Configuration for PR Preview Platform (charts/app)
+# ==============================================================================
+# This example illustrates how to configure a multi-service preview environment
+# hosting two distinct services (web frontend and API backend) in a single
+# preview namespace, routed under one Tailscale Ingress endpoint.
+#
+# Schema Summary:
+# - services: List of service objects (monolith = 1 element, microservices = N elements)
+#   - name: Unique service identifier (used in component labels, k8s resources, and GHCR package)
+#   - image: Full container image repository WITHOUT tag (e.g. ghcr.io/<org>/<service>)
+#   - port: Internal container port that the service listens on
+#   - healthcheck: Path for liveness probe HTTP GET endpoint (default: /healthz)
+#   - buildDir: Source code directory in repository for CI image build (default: name)
+#   - path: Ingress URL prefix route (default: /)
+#
+# Global-Tag Model:
+# - All services within a PR preview share a single global tag (.Values.image.tag or gitSha).
+#   This guarantees that preview environments deploy a synchronized, atomic snapshot
+#   of the codebase at that specific commit SHA.
+#
+# Ingress Multi-Path Routing:
+# - Tailscale Ingress routes prefix paths (/web and /api) to the respective ClusterIP services.
+# - Note: Prefix stripping is not natively performed by the Tailscale ingress controller.
+#   Applications should be configured to serve under their designated prefix (e.g., /web, /api),
+#   or a frontend reverse proxy (like nginx) can be used to handle path rewrites.
+# ==============================================================================
+
+# Centralized repo metadata
+repo:
+  url: "https://github.com/Dungx2409/pr-preview-platform.git"
+  label: "preview"
+
+# Multi-service workloads configuration
+services:
+  - name: web
+    image: "ghcr.io/dungx2409/demo-web"
+    port: 3000
+    healthcheck: "/healthz"
+    buildDir: "src/web"
+    path: "/web"
+
+  - name: api
+    image: "ghcr.io/dungx2409/demo-api"
+    port: 8080
+    healthcheck: "/healthz"
+    buildDir: "src/api"
+    path: "/api"
+
+# Global container image settings
+image:
+  tag: "pr-42-a1b2c3d"
+  pullPolicy: IfNotPresent
+
+# Environment & PR metadata
+env: "preview-42"
+pr:
+  number: "42"
+gitSha: "a1b2c3d"
+
+# Preview namespace prefix
+namespace:
+  prefix: "preview"
+
+# PostgreSQL ephemeral database configuration
+postgres:
+  enabled: true
+  database: "preview_db"
+  user: "preview_user"

@@ -1,17 +1,20 @@
+{{- range $index, $svc := include "app.services" . | fromYamlArray }}
+{{- if $index }}
+---
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "app.fullname" . }}
+  name: {{ include "app.serviceFullname" (list $ $svc) }}
   labels:
-    {{- include "app.labels" . | nindent 4 }}
-    app.kubernetes.io/component: app
+    {{- include "app.serviceLabels" (list $ $svc) | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ $.Values.service.type }}
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: {{ (get (.Values.app | default dict) "port") | default .Values.service.targetPort | default 8000 }}
+    - port: {{ $.Values.service.port }}
+      targetPort: {{ $svc.port }}
       protocol: TCP
       name: http
   selector:
-    {{- include "app.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: app
+    {{- include "app.serviceSelectorLabels" (list $ $svc) | nindent 4 }}
+{{- end }}

@@ -139,8 +139,16 @@ def parse_simple_yaml(text: str) -> dict[str, Any]:
         pass
 
     # Standard-library fallback for values.yaml structure
+    def _typed(val: str) -> Any:
+        if val.isdigit():
+            return int(val)
+        if val.lower() in ("true", "false"):
+            return val.lower() == "true"
+        return val
+
     res: dict[str, Any] = {}
     current_section = ""
+    current_is_list = False
 
     for raw_line in text.splitlines():
         line = raw_line.split("#", 1)[0].rstrip()
@@ -150,26 +158,37 @@ def parse_simple_yaml(text: str) -> dict[str, Any]:
         indent = len(line) - len(line.lstrip())
         stripped = line.strip()
 
-        if ":" not in stripped:
+        if ":" not in stripped and not stripped.startswith("- "):
             continue
 
-        k, v = stripped.split(":", 1)
-        k = k.strip()
-        v = v.strip().strip('"').strip("'")
-
-        if indent == 0 and not v:
-            current_section = k
-            if current_section not in res:
+        if indent == 0 and ":" in stripped:
+            k, v = stripped.split(":", 1)
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            if not v:
+                current_section = k
+                current_is_list = False
                 res[current_section] = {}
-        elif indent > 0 and current_section:
-            # Handle numeric conversion
-            if v.isdigit():
-                typed_v: Any = int(v)
-            elif v.lower() in ("true", "false"):
-                typed_v = v.lower() == "true"
-            else:
-                typed_v = v
-            res[current_section][k] = typed_v
+                continue
+
+        if indent > 0 and current_section:
+            if stripped.startswith("- "):
+                if not current_is_list:
+                    current_is_list = True
+                    res[current_section] = []
+                item_content = stripped[2:].strip()
+                item_dict: dict[str, Any] = {}
+                if ":" in item_content:
+                    ik, iv = item_content.split(":", 1)
+                    item_dict[ik.strip()] = _typed(iv.strip().strip('"').strip("'"))
+                res[current_section].append(item_dict)
+            elif current_is_list and res[current_section]:
+                if ":" in stripped:
+                    k, v = stripped.split(":", 1)
+                    res[current_section][-1][k.strip()] = _typed(v.strip().strip('"').strip("'"))
+            elif not current_is_list and ":" in stripped:
+                k, v = stripped.split(":", 1)
+                res[current_section][k.strip()] = _typed(v.strip().strip('"').strip("'"))
 
     return res
 
@@ -262,6 +281,51 @@ def update_values_yaml(content: str, updates: dict[str, Any]) -> str:
             else:
                 # If section doesn't exist, append it
                 new_content = new_content.rstrip() + f"\n\n{section}:\n  {key}: {val_str}\n"
+
+    services_list = None
+    if "services" in updates and updates["services"] is not None:
+        services_list = updates["services"]
+    elif updates.get("write_services"):
+        app_name = updates.get("app_name") or "demo-app"
+        app_img = updates.get("app_image") or f"ghcr.io/owner/{app_name}"
+        app_port = updates.get("app_port") or 8000
+        app_hc = updates.get("app_healthcheck") or "/healthz"
+        services_list = [
+            {
+                "name": app_name,
+                "image": app_img,
+                "port": app_port,
+                "healthcheck": app_hc,
+                "buildDir": app_name,
+                "path": "/",
+            }
+        ]
+
+    if services_list is not None:
+        services_lines = ["services:"]
+        for svc in services_list:
+            services_lines.append(f"  - name: {svc.get('name', 'demo-app')}")
+            services_lines.append(f"    image: {svc.get('image', '')}")
+            services_lines.append(f"    port: {svc.get('port', 8000)}")
+            services_lines.append(f"    healthcheck: {svc.get('healthcheck', '/healthz')}")
+            if svc.get("buildDir"):
+                services_lines.append(f"    buildDir: {svc['buildDir']}")
+            if svc.get("path"):
+                services_lines.append(f"    path: {svc['path']}")
+        services_str = "\n".join(services_lines)
+
+        services_pattern = re.compile(r"(?m)^services:\s*\n(?:[ \t]+[^\n]*\n|[ \t]*#[^\n]*\n)*")
+        if services_pattern.search(new_content):
+            new_content = services_pattern.sub(services_str + "\n", new_content, count=1)
+        elif re.search(r"(?m)^namespace:\s*", new_content):
+            new_content = re.sub(
+                r"(?m)(^namespace:\s*)",
+                services_str + "\n\n\\g<1>",
+                new_content,
+                count=1,
+            )
+        else:
+            new_content = new_content.rstrip() + f"\n\n{services_str}\n"
 
     return new_content
 
