@@ -15,7 +15,7 @@ spec:
     helm:
       valueFiles:
         - /values.yaml
-        - values-shared.yaml
+        - /values-shared.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: shared
