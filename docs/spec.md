@@ -1,7 +1,7 @@
 # SPEC.md — PR Preview Platform (v2.0, private tailnet direction)
 
 > **Status:** v2.0 · 2026-10-23 · **Owner:** Dũng
-> **Role of this file:** source of truth for *what* we build and *why*. If code and SPEC disagree, stop and ask (AGENTS.md §6). Work breakdown: `TASK.md`. History/decisions/metrics: `DEVLOG.md`.
+> **Role of this file:** source of truth for *what* we build and *why*. If code and spec disagree, stop and ask (.agents/AGENTS.md §6). Work breakdown: `docs/task.md`. History/decisions/metrics: `docs/devlog.md`.
 > **Supersedes v1.** v1 assumed GCP + a domain + public wildcard TLS. v2 is **local-first, private (tailnet) sharing**. See §0.
 
 ---
@@ -153,7 +153,8 @@ Not decided here on purpose. In **T-0.3** the agent looks up current stable rele
 
 ```
 pr-preview-platform/
-├── AGENTS.md  SPEC.md  TASK.md  DEVLOG.md  README.md  Makefile
+├── README.md  Makefile  LICENSE  values.yaml
+├── .agents/                 # AGENTS.md, CLAUDE.md (AI operating rules & agent configs)
 ├── ansible/                 # inventory/, site.yml, roles/{common,k3s}/
 ├── platform/
 │   ├── bootstrap/           # scripts/values for argocd, tailscale-operator, monitoring
@@ -166,8 +167,8 @@ pr-preview-platform/
 ├── exporter/                # preview-exporter (Python)
 ├── scripts/                 # verify-teardown.sh, measure-ttr.sh, bootstrap.sh
 ├── .github/workflows/       # ci.yml, build.yml, preview.yml, preview-closed.yml
-├── infra/terraform/         # (Phase 8, optional cloud variant — empty until then)
-└── docs/                    # architecture.md, runbook.md, security.md, versions.md, decisions.md, onboarding.md, cv-notes.md
+├── infra/terraform/         # (Phase 8, cloud variant — AWS IaC tested on LocalStack)
+└── docs/                    # spec.md, task.md, devlog.md, architecture.md, runbook.md, security.md...
 ```
 
 ---
@@ -296,7 +297,7 @@ CronJob lists `pr-*` namespaces, compares with open labeled PRs (GitHub API, rea
 - [ ] Neutral device/host names (Certificate Transparency exposure).
 - [ ] Teammate-contributed code runs on the owner's machine → AppProject limits, quotas and NetworkPolicy are mandatory, not optional.
 
-## 10. Phases (detailed tasks in TASK.md)
+## 10. Phases (detailed tasks in docs/task.md)
 P0 Foundation → P1 Local VM + Ansible → P2 Cluster platform (**T-2.0 Tailscale spike first**) → P3 App + chart (manual deploy, then **Tier 1 shared env**) → P4 CI + GitOps lifecycle (**Tier 2 per-PR**) → P5 Hardening + cleanup → P6 Observability + metrics → P7 Docs, demo, CV, **team onboarding** → P8 Optional cloud variant.
 
 ## 11. Definition of Done (whole project)
@@ -307,7 +308,7 @@ P0 Foundation → P1 Local VM + Ansible → P2 Cluster platform (**T-2.0 Tailsca
 - [ ] Trivy gate, quotas, NetworkPolicy, PSS, fork-safety, ACL verified by scripts/tests; results in `docs/security.md`.
 - [ ] Grafana dashboard with real data; README with diagram, quickstart, results, limitations; screen recording of open → link → update → close.
 - [ ] `docs/onboarding.md` validated by onboarding a second sample repo.
-- [ ] `docs/cv-notes.md` numbers all trace to DEVLOG Metrics.
+- [ ] `docs/cv-notes.md` numbers all trace to `docs/devlog.md` Metrics.
 
 ## 12. Open questions (owner decides; agent must not assume)
 | Question | Default until decided |

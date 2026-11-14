@@ -1,6 +1,6 @@
 # DEVLOG.md
 
-> The project's memory. Agents read the **Decisions**, **Gotchas**, and last 2–3 **Session entries** at the start of each session, and append a new entry after each task (AGENTS.md §8).
+> The project's memory. Agents read the **Decisions**, **Gotchas**, and last 2–3 **Session entries** at the start of each session, and append a new entry after each task (.agents/AGENTS.md §8).
 > Rules: newest session entry on top · only measured numbers in Metrics · never paste secrets · keep entries short.
 
 ---
@@ -139,6 +139,21 @@
 **Learned (interview note):** 2–4 lines, plain English, "I can explain this because…"
 **Next:** proposed next task + any 👤 steps needed
 ```
+
+### 2026-11-15 — Refactor — Reorganize repository structure (.agents/ & docs/)
+
+**Did:** Cleaned up root directory clutter by moving AI scaffolding and engineering documentation to dedicated directories:
+- Moved AI agent operational rules `AGENTS.md` and `CLAUDE.md` to `.agents/`.
+- Moved project specifications and logs to `docs/`: `SPEC.md` → `docs/spec.md`, `TASK.md` → `docs/task.md`, `DEVLOG.md` → `docs/devlog.md`, `REVIEW_CHANGELOG.md` → `docs/review-changelog.md`.
+- Updated all cross-references across `.agents/AGENTS.md`, `docs/spec.md`, `docs/task.md`, `docs/cv-notes.md`, `README.md`, `.github/PULL_REQUEST_TEMPLATE.md`, and ansible config.
+
+**Why this approach:** Professional open-source and portfolio presentation. Keeping the root directory minimal (code folders + README + Makefile + values.yaml) presents a clean, production-grade layout to hiring managers while keeping AI operational context fully intact in `.agents/` and `docs/`.
+
+**Verified:** `make lint` clean (yamllint, ansible-lint, shellcheck, ruff, gitleaks, helm lint, trivy); `make test` (42/42 tests green); `make helm-template` and `make golden-check` byte-identical; `make check-config` synchronized.
+
+**Learned (interview note):** Repo ergonomics matter for portfolio projects. Placing AI operating prompts in hidden directories like `.agents/` and architectural decisions / backlog in `docs/` reflects senior repository design, separating system code from development scaffolding.
+
+**Next:** T-7.3 demo assets (recording GIF + screenshots) or Phase 8 cloud automation.
 
 ### 2026-11-06 — T-9.1..T-9.10 — Multi-service chart & schema (services list)
 

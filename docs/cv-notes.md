@@ -1,7 +1,7 @@
 # CV Notes & Interview Preparation Guide
 
 > A quick-reference guide containing measured resume bullet points, architectural justifications, in-depth technical interview Q&As, and future improvements for the **PR Preview Platform**.
-> All performance metrics in this document trace directly to measured values in [DEVLOG.md](../DEVLOG.md#metrics).
+> All performance metrics in this document trace directly to measured values in [devlog.md](devlog.md#metrics).
 
 ---
 
@@ -158,14 +158,14 @@ Every number cited in this document is verified against the project record:
 
 | Claimed Metric | Measured Value | Source in Repository |
 |---|---|---|
-| PR labeled → URL healthy | **102s (1m 42s)** | [DEVLOG.md](../DEVLOG.md#metrics) (T-4.4, PR #26) |
-| PR closed → teardown | **6–7s** (cluster) / **~25s** (CI) | [DEVLOG.md](../DEVLOG.md#metrics) (T-4.5/T-4.6, PR #28) |
-| DR rebuild time | **17 min** (cached) / **39m 50s** (cold) | [DEVLOG.md](../DEVLOG.md#metrics) (T-7.1 DR Drill) |
-| Teardown leaks (20 cycles) | **0 leaks** | [DEVLOG.md](../DEVLOG.md#metrics) (T-4.6, `test-20-cycles.sh`) |
-| Argo CD stack RAM footprint | **118 MiB** (5 pods) | [DEVLOG.md](../DEVLOG.md#metrics) (T-2.3) |
-| Tailscale proxy RAM footprint | **~16.5 MiB / proxy pod** | [DEVLOG.md](../DEVLOG.md#metrics) (T-2.0 Spike) |
-| Subsequent TLS request latency | **44.2 ms** | [DEVLOG.md](../DEVLOG.md#metrics) (T-2.0 Spike) |
-| Tailscale Ephemeral Minutes used | **0 min** (tagged stateful nodes) | [DEVLOG.md](../DEVLOG.md#metrics) (T-2.0 Spike) |
-| Node RAM headroom post-monitoring| **51.3% free** (3,805 MB available) | [DEVLOG.md](../DEVLOG.md#metrics) (T-6.1) |
-| Max concurrent preview capacity | **≥ 18 environments** | [DEVLOG.md](../DEVLOG.md#metrics) (T-6.1) |
-| Tier 1 deploy on merge to main | **66s** | [DEVLOG.md](../DEVLOG.md#metrics) (T-3.5, PR #18) |
+| PR labeled → URL healthy | **102s (1m 42s)** | [devlog.md](devlog.md#metrics) (T-4.4, PR #26) |
+| PR closed → teardown | **6–7s** (cluster) / **~25s** (CI) | [devlog.md](devlog.md#metrics) (T-4.5/T-4.6, PR #28) |
+| DR rebuild time | **17 min** (cached) / **39m 50s** (cold) | [devlog.md](devlog.md#metrics) (T-7.1 DR Drill) |
+| Teardown leaks (20 cycles) | **0 leaks** | [devlog.md](devlog.md#metrics) (T-4.6, `test-20-cycles.sh`) |
+| Argo CD stack RAM footprint | **118 MiB** (5 pods) | [devlog.md](devlog.md#metrics) (T-2.3) |
+| Tailscale proxy RAM footprint | **~16.5 MiB / proxy pod** | [devlog.md](devlog.md#metrics) (T-2.0 Spike) |
+| Subsequent TLS request latency | **44.2 ms** | [devlog.md](devlog.md#metrics) (T-2.0 Spike) |
+| Tailscale Ephemeral Minutes used | **0 min** (tagged stateful nodes) | [devlog.md](devlog.md#metrics) (T-2.0 Spike) |
+| Node RAM headroom post-monitoring| **51.3% free** (3,805 MB available) | [devlog.md](devlog.md#metrics) (T-6.1) |
+| Max concurrent preview capacity | **≥ 18 environments** | [devlog.md](devlog.md#metrics) (T-6.1) |
+| Tier 1 deploy on merge to main | **66s** | [devlog.md](devlog.md#metrics) (T-3.5, PR #18) |

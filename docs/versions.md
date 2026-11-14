@@ -1,7 +1,7 @@
 # Pinned Versions (`docs/versions.md`)
 
 > **Rule:** Every component, image, chart, and GitHub action must have an explicit pinned version. Never use `latest`.
-> All versions are verified against official release pages or the real local environment (SPEC v2.0 §4.2, AGENTS.md §4).
+> All versions are verified against official release pages or the real local environment (docs/spec.md §4.2, .agents/AGENTS.md §4).
 
 **Date checked:** 2026-10-23
 

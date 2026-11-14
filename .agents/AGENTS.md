@@ -4,10 +4,10 @@ You are helping **Dũng** (the owner) build the **PR Preview Platform**, a perso
 
 ## 1. Read order (every session)
 
-1. `AGENTS.md` (this file)
-2. `TASK.md` → find **Current focus** and the next unchecked task whose dependencies are done
-3. `SPEC.md` → only the sections relevant to that task (the source of truth for *what* and *why*)
-4. `DEVLOG.md` → the last 2–3 session entries + **Decisions** + **Gotchas**
+1. `.agents/AGENTS.md` (this file)
+2. `docs/task.md` → find **Current focus** and the next unchecked task whose dependencies are done
+3. `docs/spec.md` → only the sections relevant to that task (the source of truth for *what* and *why*)
+4. `docs/devlog.md` → the last 2–3 session entries + **Decisions** + **Gotchas**
 
 Never start coding before you can state, in one sentence, which task ID you are doing and what "done" means for it.
 
@@ -17,7 +17,7 @@ Never start coding before you can state, in one sentence, which task ID you are 
 - Stack: GCP VM + single-node **k3s**, **Terraform** (cloud) + **Ansible** (node), **Argo CD ApplicationSet** (GitOps), **GitHub Actions** + GHCR, **cert-manager** wildcard TLS, **Prometheus/Grafana**, **Trivy**.
 - CI builds; the cluster **pulls** from Git. CI never holds cluster credentials.
 - Goal is a **demoable, measured, understandable** project, not a feature-rich one.
-- Full details: `SPEC.md`.
+- Full details: `docs/spec.md`.
 
 ## 3. Working loop (one task at a time)
 
@@ -25,7 +25,7 @@ Never start coding before you can state, in one sentence, which task ID you are 
 2. **Branch**: `task/T-<id>-<short-name>` (e.g. `task/T-1.2-terraform-network`). Never commit to `main`.
 3. **Implement in small steps.** One task = one small PR-sized change. No unrelated refactors, no drive-by features.
 4. **Verify** with the commands in §7. Paste the real output summary (not "should work").
-5. **Update docs**: tick the task in `TASK.md`, add a session entry in `DEVLOG.md` (§8), update `SPEC.md` only if behavior/design changed (and say so).
+5. **Update docs**: tick the task in `docs/task.md`, add a session entry in `docs/devlog.md` (§8), update `docs/spec.md` only if behavior/design changed (and say so).
 6. **Commit** with Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `ci:`, `infra:`), referencing the task ID: `infra: add static IP and firewall (T-1.2)`.
 7. **Stop and report** (see §9). Do not chain into the next task unless asked.
 
@@ -39,7 +39,7 @@ Never start coding before you can state, in one sentence, which task ID you are 
 - `kubectl apply|delete|patch|edit|drain` or `helm install|upgrade|uninstall` on the real cluster
 - Installing system packages or tools on the owner's machine
 - Adding a new dependency, a new tool, or a new third-party GitHub Action
-- Changing anything in `SPEC.md` §4 (Decisions) or §9 (Security)
+- Changing anything in `docs/spec.md` §4 (Decisions) or §9 (Security)
 
 **⛔ Never**
 - Commit secrets, tokens, kubeconfigs, `.tfstate`, `.tfvars` with real values, private keys, or `.env` files. If you see one staged, stop and tell the owner.
@@ -55,10 +55,10 @@ Some steps need the owner (billing account, domain/DNS tokens, GitHub settings, 
 
 ## 6. When unsure or when things disagree
 
-- If SPEC and reality disagree, or two requirements conflict: **stop, explain in 3–5 lines, propose 2 options with a recommendation, wait.** Do not silently pick.
-- If a task is bigger than ~half a day of work, split it in `TASK.md` first.
-- If you are stuck after 2 serious attempts, write what you tried + hypotheses in `DEVLOG.md` → Gotchas and ask.
-- Do not widen scope. New ideas go to `DEVLOG.md` → **Ideas parking lot**.
+- If spec and reality disagree, or two requirements conflict: **stop, explain in 3–5 lines, propose 2 options with a recommendation, wait.** Do not silently pick.
+- If a task is bigger than ~half a day of work, split it in `docs/task.md` first.
+- If you are stuck after 2 serious attempts, write what you tried + hypotheses in `docs/devlog.md` → Gotchas and ask.
+- Do not widen scope. New ideas go to `docs/devlog.md` → **Ideas parking lot**.
 
 ## 7. Verification commands (keep this section current)
 
@@ -73,11 +73,11 @@ Target `make` interface (create in T-0.4; extend as the repo grows):
 | `make helm-template` | render chart with sample values and validate (kubeconform) |
 | `make verify-teardown` | check no `pr-*` leftovers (needs cluster access; read-only) |
 
-A task is **not done** until its acceptance criteria in `TASK.md` pass and `make lint && make test` are green (where applicable).
+A task is **not done** until its acceptance criteria in `docs/task.md` pass and `make lint && make test` are green (where applicable).
 
 ## 8. DEVLOG protocol (important — this is how future sessions get context)
 
-After each task, append a session entry to `DEVLOG.md` using the template there. Always include:
+After each task, append a session entry to `docs/devlog.md` using the template there. Always include:
 - **What** changed (files, task ID) and **Why** this approach
 - **Verified** (commands + result)
 - **Gotchas/decisions** discovered (also add to the Decisions or Gotchas sections if lasting)
@@ -117,10 +117,10 @@ Code, comments, commit messages, and repo docs are in **English**.
 
 ## 12. Definition of done (per task)
 
-- [ ] Acceptance criteria in `TASK.md` met, with evidence
+- [ ] Acceptance criteria in `docs/task.md` met, with evidence
 - [ ] `make lint` / `make test` green (if applicable)
 - [ ] No secrets or state files in the diff
-- [ ] `TASK.md` ticked, `DEVLOG.md` entry added
+- [ ] `docs/task.md` ticked, `docs/devlog.md` entry added
 - [ ] Owner can explain what changed and why (§10)
 
 ## 13. Known traps (read once)
