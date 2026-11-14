@@ -29,7 +29,10 @@ trap 'rm -f "${TMP_RENDER}"' EXIT
 
 helm template test-app "${CHART_DIR}" > "${TMP_RENDER}"
 
-if diff -u "${GOLDEN_FILE}" "${TMP_RENDER}"; then
+# Use diff -u -B to ignore trivial blank-line differences between Helm versions
+# (e.g. Helm on Ubuntu 24 vs Ubuntu 26 blank lines around '---' separators)
+# while strictly catching any real structural or content divergence.
+if diff -u -B "${GOLDEN_FILE}" "${TMP_RENDER}"; then
     echo "✓ Helm template output is byte-identical to golden baseline."
     exit 0
 else

@@ -2,7 +2,7 @@
 
 > Legend: `[ ]` todo · `[~]` in progress / done but acceptance not yet verified · `[x]` done · `[!]` blocked
 > Owner: 🤖 agent · 👤 owner (human only) · 🤝 pair (agent prepares, owner runs/approves)
-> Rules: one task at a time, in ID order unless dependencies allow otherwise. After each task update this file and `DEVLOG.md`. *What/why* lives in `SPEC.md`; *how to work* lives in `AGENTS.md`.
+> Rules: one task at a time, in ID order unless dependencies allow otherwise. After each task update this file and `docs/devlog.md`. *What/why* lives in `docs/spec.md`; *how to work* lives in `.agents/AGENTS.md`.
 > Direction (SPEC v2.0): **local VirtualBox VM + k3s, private sharing through a Tailscale tailnet**. Two tiers: **Tier 1** shared environment, **Tier 2** per-PR previews. No GCP, no domain needed until Phase 8 (optional).
 > IDs T-1.1 – T-1.4 are intentionally unused (Terraform/cloud content moved to T-8.1).
 

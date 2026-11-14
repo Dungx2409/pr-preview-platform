@@ -2,7 +2,7 @@
 <!-- Briefly describe what this PR changes and why -->
 
 ## Task Reference
-<!-- Reference the Task ID from TASK.md (e.g., T-0.2, T-1.5) -->
+<!-- Reference the Task ID from docs/task.md (e.g., T-0.2, T-1.5) -->
 Task ID: `T-`
 
 ## Type of Change
@@ -19,7 +19,7 @@ Task ID: `T-`
 - [ ] Result summary:
 
 ## Checklist
-- [ ] Acceptance criteria in `TASK.md` met with evidence
+- [ ] Acceptance criteria in `docs/task.md` met with evidence
 - [ ] `make lint` passes locally (where applicable)
 - [ ] No secrets, credentials, or state files committed
-- [ ] `TASK.md` ticked and `DEVLOG.md` entry added
+- [ ] `docs/task.md` ticked and `docs/devlog.md` entry added

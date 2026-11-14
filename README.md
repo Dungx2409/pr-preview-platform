@@ -87,7 +87,7 @@ For full details on topology, sequence diagrams, and lifecycle flows, see [`docs
 
 ## 3. Empirically Measured Results
 
-Every metric below was measured against the live environment under real-world testing (see [`DEVLOG.md`](DEVLOG.md)):
+Every metric below was measured against the live environment under real-world testing (see [`docs/devlog.md`](docs/devlog.md)):
 
 | Metric / Objective | Target | Measured Result | Verification Method |
 |---|---|---|---|
@@ -626,10 +626,15 @@ To maintain architectural transparency, the platform intentionally makes specifi
 
 ## 11. Documentation Index
 
+- [Requirements & Specifications](docs/spec.md) — Source of truth for functional and technical specifications.
 - [System Architecture](docs/architecture.md) — Comprehensive component topology, networking model, and sequence diagrams.
+- [Development Log & Metrics](docs/devlog.md) — Engineering log, measured performance numbers, and problem-solving records.
+- [Project Backlog & Tasks](docs/task.md) — Implementation phases, acceptance criteria, and task completion records.
 - [Security Matrix & Threat Model](docs/security.md) — Zero-trust access controls, container hardening, and empirical security test results.
 - [Operations & Runbook](docs/runbook.md) — Standard Operating Procedures (SOP), troubleshooting guides, and Disaster Recovery protocol.
 - [Architecture Decision Records (ADRs)](docs/decisions.md) — Technical evaluations, rejected alternatives, and trade-off rationales.
+- [Team Onboarding Guide](docs/onboarding.md) — Guide for onboarding repositories and configuring preview workflows.
+- [CV Notes & Interview Guide](docs/cv-notes.md) — Measured bullets, elevator pitch, and interview Q&As.
 - [Pinned Component Versions](docs/versions.md) — Explicit versions for Kubernetes, Helm charts, Python packages, and linters.
 
 ---
