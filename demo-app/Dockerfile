@@ -1,5 +1,5 @@
 # Stage 1: Build virtual environment
-FROM python:3.10-slim AS builder
+FROM python:3.10.16-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip uninstall -y pip setuptools wheel
 
 # Stage 2: Minimal runtime image
-FROM python:3.10-slim AS runtime
+FROM python:3.10.16-slim-bookworm AS runtime
 
 # Remove unnecessary build/package tooling bundled in base python image to eliminate CVE attack surface
 RUN rm -rf /usr/local/lib/python3.10/site-packages/setuptools* \

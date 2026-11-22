@@ -13,9 +13,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
-  pull-requests: write
-  deployments: write
 
 env:
   TAILNET_NAME: taildc1471.ts.net
@@ -31,10 +28,15 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+      deployments: write
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - id: config
         name: Load centralized configuration from values.yaml

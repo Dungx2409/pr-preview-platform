@@ -15,9 +15,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
-  pull-requests: write
-  deployments: write
 
 env:
   TAILNET_NAME: taildc1471.ts.net
@@ -30,6 +27,8 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       services: ${{ steps.config.outputs.services }}
       ns_prefix: ${{ steps.config.outputs.ns_prefix }}
@@ -38,7 +37,7 @@ jobs:
       short_sha: ${{ steps.meta.outputs.short_sha }}
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
@@ -97,19 +96,25 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         service: ${{ fromJson(needs.setup.outputs.services) }}
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4.6.0
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -211,7 +216,7 @@ jobs:
 
           echo "action=${ACTION}" >> "$GITHUB_OUTPUT"
 
-      - name: Build local container image
+      - name: Build local container image with BuildKit cache
         if: steps.service_action.outputs.action == 'build'
         run: |
           DESC="PR Preview image for PR #${{ github.event.pull_request.number }}"
@@ -222,7 +227,10 @@ jobs:
           if [ ! -d "${BUILD_DIR}" ]; then
             BUILD_DIR="demo-app"
           fi
-          docker build \
+          docker buildx build \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             --label "org.opencontainers.image.description=${DESC}" \
             -t "${{ matrix.service.image }}:${{ needs.setup.outputs.tag_8 }}" \
@@ -230,7 +238,7 @@ jobs:
 
       - name: Scan container image with Trivy
         if: steps.service_action.outputs.action == 'build'
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
         with:
           image-ref: "${{ matrix.service.image }}:${{ needs.setup.outputs.tag_8 }}"
           format: "table"
@@ -249,6 +257,9 @@ jobs:
     needs: [setup, build-preview]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      deployments: write
     steps:
       - name: Upsert PR comment with preview link
         env:

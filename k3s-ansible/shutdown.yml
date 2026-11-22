@@ -1,0 +1,20 @@
+---
+- name: Shutdown K3s Workers first
+  hosts: workers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Power off worker nodes
+      ansible.builtin.shell: "sleep 2 && shutdown -h now"
+      async: 1
+      poll: 0
+
+- name: Shutdown K3s Master last
+  hosts: master
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Power off master node
+      ansible.builtin.shell: "sleep 2 && shutdown -h now"
+      async: 1
+      poll: 0
