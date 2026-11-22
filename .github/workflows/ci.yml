@@ -24,52 +24,75 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v7.1.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.4.0
         with:
           python-version: "3.10"
+          cache: "pip"
 
-      - name: Install linters
+      - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
           pip install yamllint==1.38.0 ansible-lint==26.10.1 ruff==0.11.11
+          pip install -r demo-app/requirements.txt -r demo-app/requirements-dev.txt
           sudo apt-get update && sudo apt-get install -y shellcheck
           ansible-galaxy collection install -r ansible/requirements.yml
 
+      - name: Run fast static checks & linters (Fail-Fast)
+        run: |
+          make check-config
+          make check-configmaps
+          make lint-python
+          make lint-yaml
+          make lint-shell
+          make lint-ansible
+
+      - name: Run unit tests
+        run: make test
+
+      - name: Cache external binary tools
+        id: cache-tools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.2.2
+        with:
+          path: |
+            /usr/local/bin/gitleaks
+            /usr/local/bin/kubeconform
+            /usr/local/bin/trivy
+          key: tools-${{ runner.os }}-gitleaks-8.27.2-kubeconform-0.6.7-trivy-0.76.1
+
       - name: Install gitleaks
+        if: steps.cache-tools.outputs.cache-hit != 'true'
         run: |
           GITLEAKS_VERSION="8.27.2"
           URL="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSL "$URL" | tar -xz -C /usr/local/bin gitleaks
-          chmod +x /usr/local/bin/gitleaks
+          curl -sSL "$URL" | sudo tar -xz -C /usr/local/bin gitleaks
+          sudo chmod +x /usr/local/bin/gitleaks
 
       - name: Install kubeconform
+        if: steps.cache-tools.outputs.cache-hit != 'true'
         run: |
           KUBECONFORM_VERSION="0.6.7"
           URL="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
-          curl -sSL "$URL" | tar -xz -C /usr/local/bin kubeconform
-          chmod +x /usr/local/bin/kubeconform
+          curl -sSL "$URL" | sudo tar -xz -C /usr/local/bin kubeconform
+          sudo chmod +x /usr/local/bin/kubeconform
 
       - name: Install trivy
+        if: steps.cache-tools.outputs.cache-hit != 'true'
         run: |
           TRIVY_VERSION="0.76.1"
           URL="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-          curl -sSL "$URL" | tar -xz -C /usr/local/bin trivy
-          chmod +x /usr/local/bin/trivy
-
-      - name: Install test dependencies
-        run: |
-          pip install -r demo-app/requirements.txt -r demo-app/requirements-dev.txt
-
-      - name: Run make lint
-        run: make lint
+          curl -sSL "$URL" | sudo tar -xz -C /usr/local/bin trivy
+          sudo chmod +x /usr/local/bin/trivy
 
       - name: Run make helm-template
         run: make helm-template
 
-      - name: Run make test
-        run: make test
+      - name: Run security & secret scanning
+        run: |
+          make lint-secrets
+          make lint-helm
+          make lint-trivy

@@ -33,17 +33,17 @@ spec:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "app.postgresFullname" . }}
+                  name: {{ .Values.postgres.existingSecret | default (include "app.postgresFullname" .) }}
                   key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "app.postgresFullname" . }}
+                  name: {{ .Values.postgres.existingSecret | default (include "app.postgresFullname" .) }}
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "app.postgresFullname" . }}
+                  name: {{ .Values.postgres.existingSecret | default (include "app.postgresFullname" .) }}
                   key: POSTGRES_DB
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata

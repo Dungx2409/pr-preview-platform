@@ -1,0 +1,50 @@
+---
+- name: Reset and Clean K3s Lab Cluster
+  hosts: k3s_cluster
+  become: true
+  tasks:
+    - name: Check if k3s-uninstall script exists
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s-uninstall.sh
+      register: k3s_uninstall_script
+
+    - name: Run k3s server uninstaller
+      ansible.builtin.command: /usr/local/bin/k3s-uninstall.sh
+      when: k3s_uninstall_script.stat.exists
+      changed_when: true
+
+    - name: Check if k3s-agent-uninstall script exists
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s-agent-uninstall.sh
+      register: k3s_agent_uninstall_script
+
+    - name: Run k3s agent uninstaller
+      ansible.builtin.command: /usr/local/bin/k3s-agent-uninstall.sh
+      when: k3s_agent_uninstall_script.stat.exists
+      changed_when: true
+
+    - name: Kill any lingering k3s/containerd processes
+      ansible.builtin.shell: pkill -9 -f "k3s" || true
+      changed_when: false
+
+    - name: Remove leftover directories and configuration files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher
+        - /var/lib/rancher
+        - /var/lib/kubelet
+        - /etc/cni
+        - /run/k3s
+        - /run/flannel
+        - /tmp/k3s-install.sh
+        - /tmp/metallb-pool.yaml
+
+    - name: Remove local fetched kubeconfig
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/.kube/k3s-lab.yaml"
+        state: absent
+      delegate_to: localhost
+      become: false
+      run_once: true

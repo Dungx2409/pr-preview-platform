@@ -22,9 +22,6 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch"]
@@ -46,3 +43,38 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: preview-exporter
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: preview-exporter-configmap-reader
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: preview-exporter
+    app.kubernetes.io/part-of: pr-preview-platform
+    app.kubernetes.io/component: observability
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["preview-exporter-stats"]
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: preview-exporter-configmap-reader
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: preview-exporter
+    app.kubernetes.io/part-of: pr-preview-platform
+    app.kubernetes.io/component: observability
+subjects:
+  - kind: ServiceAccount
+    name: preview-exporter
+    namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: preview-exporter-configmap-reader

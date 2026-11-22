@@ -140,6 +140,28 @@
 **Next:** proposed next task + any 👤 steps needed
 ```
 
+### 2026-11-23 — Infra — Security Hardening & CI Optimization (Audit Fixes)
+
+**Did:** Fixed security vulnerabilities and optimized infrastructure across Ansible, RBAC, Helm chart, and CI pipelines:
+- **Ansible Hardening (`k3s-ansible/`):** Set `host_key_checking = True` in `ansible.cfg` to prevent MITM attacks. Fixed master node kubeconfig permissions from world-readable (`0644`) to `0600` (root-only), provisioning individual `0600` kubeconfig in `~/.kube/config` for non-root `vboxuser` on master and worker nodes.
+- **RBAC Least Privilege (`platform/`):** Removed cluster-wide `configmaps` access from `preview-exporter` ClusterRole, replacing it with a namespaced `Role` scoped strictly to `preview-exporter-stats` in namespace `monitoring`. Restricted `reaper` pods access from cluster-wide to a namespaced `Role` in namespace `tailscale`.
+- **Helm Secrets Management (`charts/app/`):** Added `.Values.postgres.existingSecret` support across `postgres-secret.yaml`, `deployment.yaml`, and `postgres-deployment.yaml`. Retained 100% backward-compatible byte-identical golden rendering when unset while allowing zero-knowledge external secret injection.
+- **CI Workflows Hardening & Performance (`.github/workflows/`):** Pinned GitHub Actions to immutable 40-character commit SHAs. Reduced top-level workflow permissions to `contents: read` and scoped write tokens per-job. Enabled Docker Buildx layer caching (`type=gha`) in `build.yml` and `preview.yml`. Enabled `cache: 'pip'` and binary tool caching for `gitleaks`, `kubeconform`, and `trivy` in `ci.yml`. Enabled `fail-fast: true` in build matrices and removed `--force` from automated branch pushes.
+- **Docker Hygiene (`demo-app/`):** Added `.env*`, `README.md`, `Dockerfile`, `*.md` to `.dockerignore` and pinned base images in `Dockerfile` to `python:3.10.16-slim-bookworm`.
+
+**Why this approach:** Direct remediation of real security and efficiency findings surfaced during infrastructure audit, adhering strictly to least privilege, reproducible builds, and defense-in-depth principles without breaking existing golden test baselines or branch protection contracts.
+
+**Verified:**
+- `make check-config && make check-configmaps` -> 100% synchronized.
+- `make lint-python && make lint-yaml && make lint-shell` -> 0 errors.
+- `make golden-check && make helm-template` -> byte-identical to baseline.
+- `make test` -> 42/42 unit tests passed in 0.67s.
+- `make lint-secrets` -> 0 secrets leaked.
+
+**Learned (interview note):** Least privilege requires inspecting the actual operational domain of workloads: an exporter that queries one ConfigMap in `monitoring` should never have cluster-wide ConfigMap permissions. Similarly, securing kubeconfig at `0600` for the node owner and distributing personal configs avoids opening critical cluster-admin credentials to all local processes.
+
+**Next:** Ready for PR review or Phase 7 demo assets.
+
 ### 2026-11-15 — Refactor — Reorganize repository structure (.agents/ & docs/)
 
 **Did:** Cleaned up root directory clutter by moving AI scaffolding and engineering documentation to dedicated directories:

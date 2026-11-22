@@ -119,6 +119,7 @@ postgres:
     port: 5432
   user: postgres
   password: ""  # empty => auto-generated per-release (see app.postgresPassword helper)
+  existingSecret: ""  # empty => chart creates secret; set name to reuse pre-provisioned secret
   database: appdb
   podSecurityContext:
     runAsNonRoot: true

@@ -16,21 +16,21 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
-  packages: write
-  pull-requests: write
+  contents: read
 
 jobs:
   setup:
     name: Load Centralized Matrix Configuration
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       services: ${{ steps.config.outputs.services }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - id: config
         name: Load centralized configuration from values.yaml
@@ -80,15 +80,21 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         service: ${{ fromJson(needs.setup.outputs.services) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
-      - name: Build local container image
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.10.0
+
+      - name: Build local container image with BuildKit cache
         run: |
           BUILD_DIR="${{ matrix.service.buildDir }}"
           if [ ! -d "${BUILD_DIR}" ]; then
@@ -97,13 +103,16 @@ jobs:
           if [ ! -d "${BUILD_DIR}" ]; then
             BUILD_DIR="demo-app"
           fi
-          docker build \
+          docker buildx build \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             -t "${{ matrix.service.image }}:${{ needs.setup.outputs.short_sha }}" \
             "${BUILD_DIR}/"
 
       - name: Scan container image with Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@1f0aa582c8c8f5f7639610d6d38baddfea4fdcee # v0.30.0
         with:
           image-ref: "${{ matrix.service.image }}:${{ needs.setup.outputs.short_sha }}"
           format: "table"
@@ -113,7 +122,7 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4.6.0
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -128,9 +137,12 @@ jobs:
     needs: [setup, build-and-push]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Create PR to bump shared image tag in values-shared.yaml
         env:
@@ -152,7 +164,7 @@ jobs:
           git checkout -B "$BRANCH_NAME"
           git add charts/app/values-shared.yaml
           git commit -m "chore: bump shared image to ${SHORT_SHA}"
-          git push -u origin "$BRANCH_NAME" --force
+          git push -u origin "$BRANCH_NAME"
 
           if ! gh pr view "$BRANCH_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh pr create \

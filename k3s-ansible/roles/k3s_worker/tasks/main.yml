@@ -1,0 +1,44 @@
+---
+- name: Check if k3s binary exists on worker
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_worker_bin
+
+- name: Download K3s installation script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: '0755'
+  when: not k3s_worker_bin.stat.exists
+
+- name: Install and join K3s agent
+  ansible.builtin.command: /tmp/k3s-install.sh
+  environment:
+    K3S_URL: "https://{{ hostvars[groups['master'][0]]['ansible_host'] }}:6443"
+    K3S_TOKEN: "{{ hostvars[groups['master'][0]]['k3s_master_token'] }}"
+    INSTALL_K3S_EXEC: "agent --node-ip={{ ansible_host }} --flannel-iface={{ flannel_iface }}"
+  when: not k3s_worker_bin.stat.exists
+  no_log: true
+  changed_when: true
+
+- name: Ensure k3s-agent service is started and enabled
+  ansible.builtin.systemd:
+    name: k3s-agent
+    state: started
+    enabled: true
+
+- name: Ensure ~/.kube directory exists for user on worker
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0700'
+
+- name: Distribute cluster kubeconfig to worker user home for kubectl access
+  ansible.builtin.copy:
+    src: "{{ lookup('env', 'HOME') }}/.kube/k3s-lab.yaml"
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    mode: '0600'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"

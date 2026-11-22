@@ -10,3 +10,7 @@ venv/
 .gitignore
 *.swp
 *.swo
+.env*
+Dockerfile
+README.md
+*.md

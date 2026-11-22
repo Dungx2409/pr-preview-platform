@@ -1,0 +1,96 @@
+---
+- name: Check if k3s binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_master_bin
+
+- name: Download K3s installation script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: '0755'
+  when: not k3s_master_bin.stat.exists
+
+- name: Install K3s server
+  ansible.builtin.command: /tmp/k3s-install.sh
+  environment:
+    INSTALL_K3S_EXEC: >-
+      server --disable servicelb --write-kubeconfig-mode 600
+      --node-ip={{ ansible_host }} --flannel-iface={{ flannel_iface }}
+  when: not k3s_master_bin.stat.exists
+  changed_when: true
+
+- name: Ensure k3s service is started and enabled
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true
+
+- name: Wait for K3s node token to be generated
+  ansible.builtin.wait_for:
+    path: /var/lib/rancher/k3s/server/node-token
+    timeout: 60
+
+- name: Ensure /etc/rancher/k3s/k3s.yaml permissions are 0600 (owner only)
+  ansible.builtin.file:
+    path: /etc/rancher/k3s/k3s.yaml
+    mode: '0600'
+    owner: root
+    group: root
+
+- name: Ensure ~/.kube directory exists for user on master
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0700'
+
+- name: Copy kubeconfig to user home for non-root kubectl access
+  ansible.builtin.copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    remote_src: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+
+- name: Read K3s node token
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  register: k3s_master_node_token_b64
+  no_log: true
+
+- name: Set k3s_master_token fact
+  ansible.builtin.set_fact:
+    k3s_master_token: "{{ k3s_master_node_token_b64.content | b64decode | trim }}"
+  no_log: true
+
+- name: Ensure local .kube directory exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.kube"
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+
+- name: Fetch kubeconfig from master to local machine
+  ansible.builtin.fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ lookup('env', 'HOME') }}/.kube/k3s-lab.yaml"
+    flat: true
+
+- name: Replace localhost IP with master IP in local kubeconfig
+  ansible.builtin.replace:
+    path: "{{ lookup('env', 'HOME') }}/.kube/k3s-lab.yaml"
+    regexp: 'https://127\.0\.0\.1:6443'
+    replace: "https://{{ ansible_host }}:6443"
+  delegate_to: localhost
+  become: false
+
+- name: Ensure local kubeconfig has secure permissions
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.kube/k3s-lab.yaml"
+    mode: '0600'
+  delegate_to: localhost
+  become: false
