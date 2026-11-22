@@ -14,7 +14,7 @@
 - name: Install K3s server
   ansible.builtin.command: /tmp/k3s-install.sh
   environment:
-    INSTALL_K3S_EXEC: "server --disable servicelb --node-ip={{ ansible_host }} --flannel-iface={{ flannel_iface }}"
+    INSTALL_K3S_EXEC: "server --disable servicelb --write-kubeconfig-mode 644 --node-ip={{ ansible_host }} --flannel-iface={{ flannel_iface }}"
   when: not k3s_master_bin.stat.exists
   changed_when: true
 
