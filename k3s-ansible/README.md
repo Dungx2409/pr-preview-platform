@@ -7,7 +7,8 @@ Playbook Ansible tự động hóa thiết lập cụm K3s (1 Master, 2 Workers)
 k3s-ansible/
 ├── ansible.cfg
 ├── inventory.ini
-├── site.yml
+├── site.yml             # Playbook cài đặt cụm
+├── reset.yml            # Playbook dọn sạch / gỡ bỏ K3s trên cả 3 nodes
 └── roles/
     ├── common/          # Cài curl, tắt swap
     ├── k3s_master/      # Cài K3s server, lấy token, fetch kubeconfig
@@ -16,13 +17,16 @@ k3s-ansible/
 ```
 
 ## Cách chạy
+
+### 1. Dọn sạch cụm cũ (nếu đã lỡ cài thủ công trước đó)
 ```bash
 cd k3s-ansible
+ansible-playbook -i inventory.ini reset.yml
+```
 
-# 1. Kiểm tra cú pháp playbook
-ansible-playbook -i inventory.ini site.yml --syntax-check
-
-# 2. Thực thi cài đặt toàn bộ cụm
+### 2. Cài đặt toàn bộ cụm
+```bash
+cd k3s-ansible
 ansible-playbook -i inventory.ini site.yml
 ```
 
