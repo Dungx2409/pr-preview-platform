@@ -1,0 +1,36 @@
+---
+- name: Apply MetalLB manifest
+  ansible.builtin.command:
+    cmd: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.8/config/manifests/metallb-native.yaml
+  register: metallb_apply
+  changed_when: "'created' in metallb_apply.stdout or 'configured' in metallb_apply.stdout"
+
+- name: Wait for MetalLB controller deployment to be ready
+  ansible.builtin.command:
+    cmd: kubectl rollout status deployment/controller -n metallb-system --timeout=180s
+  changed_when: false
+
+- name: Wait for MetalLB speaker daemonset to be ready
+  ansible.builtin.command:
+    cmd: kubectl rollout status daemonset/speaker -n metallb-system --timeout=180s
+  changed_when: false
+
+- name: Copy MetalLB IP pool configuration
+  ansible.builtin.template:
+    src: metallb-pool.yaml.j2
+    dest: /tmp/metallb-pool.yaml
+    mode: '0644'
+
+- name: Apply MetalLB IP pool and L2 advertisement
+  ansible.builtin.command:
+    cmd: kubectl apply -f /tmp/metallb-pool.yaml
+  register: metallb_config_apply
+  until: metallb_config_apply.rc == 0
+  retries: 10
+  delay: 5
+  changed_when: "'created' in metallb_config_apply.stdout or 'configured' in metallb_config_apply.stdout"
+
+- name: Clean up temporary MetalLB configuration file
+  ansible.builtin.file:
+    path: /tmp/metallb-pool.yaml
+    state: absent
